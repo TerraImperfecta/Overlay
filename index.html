@@ -1011,8 +1011,8 @@ function muxWebM({W,H,samples,codecId,codecPrivate}){
 /* =====================================================================
    9. WEBCODECS ENCODE DRIVER
    ===================================================================== */
-async function encodeWithVideoEncoder(fmt, W, H, plan, geom, quality, say){
-  const R = makeRenderCanvas(W, H, geom, true);
+async function encodeWithVideoEncoder(fmt, W, H, plan, geom, quality, say, view){
+  const R = makeRenderCanvas(W, H, geom, true, view);
   const fps = Math.max(1, plan.count / (plan.outDur/1000));
   const bitrate = Math.round(W * H * fps * (0.03 + 0.22*quality));
   const chunks = []; let description = null, failure = null;
@@ -1198,30 +1198,43 @@ function geometry(){
   return {w:Math.ceil(maxX-minX), h:Math.ceil(maxY-minY), dx:-minX, dy:-minY};
 }
 
-function composite(ctx, W, H, t, dx, dy, forceOpaque){
-  const [A,B] = S.src, plan = S.plan;
+/* `view` is the state to composite from. The preview passes nothing and reads S
+   live, which is what it wants. A render passes a snapshot taken when it began,
+   so that nothing the user touches while it runs can land halfway through the
+   output — see renderView() and #27. */
+function composite(ctx, W, H, t, dx, dy, forceOpaque, view){
+  const v = view || S;
+  const [A,B] = v.src, plan = v.plan;
   ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = 1;
   ctx.clearRect(0,0,W,H);
-  if (S.bg === "solid" || forceOpaque){ ctx.fillStyle = S.bgColor; ctx.fillRect(0,0,W,H); }
+  if (v.bg === "solid" || forceOpaque){ ctx.fillStyle = v.bgColor; ctx.fillRect(0,0,W,H); }
   if (!A) return;
   ctx.drawImage(A.frames[frameAt(A, t, plan?plan.kA:1)].bitmap, dx, dy);
   if (!B) return;
-  const ow = B.width*S.scale, oh = B.height*S.scale;
-  ctx.globalCompositeOperation = S.blend; ctx.globalAlpha = S.opacity;
+  const ow = B.width*v.scale, oh = B.height*v.scale;
+  ctx.globalCompositeOperation = v.blend; ctx.globalAlpha = v.opacity;
   ctx.drawImage(B.frames[frameAt(B, t, plan?plan.kB:1)].bitmap,
-                dx + A.width*S.ox - ow/2, dy + A.height*S.oy - oh/2, ow, oh);
+                dx + A.width*v.ox - ow/2, dy + A.height*v.oy - oh/2, ow, oh);
   ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = 1;
 }
 
-function makeRenderCanvas(W, H, g, opaque){
+/* Everything composite() reads, frozen. src is copied so a slot being replaced
+   cannot change which sources a running render is drawing. */
+function renderView(plan){
+  return {plan, src: S.src.slice(), bg: S.bg, bgColor: S.bgColor, blend: S.blend,
+          opacity: S.opacity, scale: S.scale, ox: S.ox, oy: S.oy};
+}
+
+function makeRenderCanvas(W, H, g, opaque, view){
   const c = document.createElement("canvas"); c.width = W; c.height = H;
   const cx = c.getContext("2d", {willReadFrequently:true, alpha:!opaque});
   cx.imageSmoothingEnabled = true;
   const sx = W/g.w, sy = H/g.h;
   return { c, cx, at(t){ cx.save(); cx.scale(sx, sy);
-    composite(cx, g.w, g.h, t, g.dx, g.dy, opaque); cx.restore(); } };
+    composite(cx, g.w, g.h, t, g.dx, g.dy, opaque, view); cx.restore(); } };
 }
 
+let busy = false;      // set for the whole of a render, cleared in its finally
 let pausedAt = 0;
 function loop(){
   requestAnimationFrame(loop);
@@ -1293,7 +1306,13 @@ const MODE_TEXT = {
   longest:"Output runs to the longer one. The shorter repeats and may cut mid-cycle."
 };
 
+/* A replan while a render is running would leave composite() sampling from a
+   different timeline than the one being written -- the frames come from S.plan's
+   retiming, the durations from the plan the encoder captured. Defer it instead;
+   the render finishes against consistent state and the new plan lands after. */
+let queuedReplan = false;
 function replan(){
+  if (busy){ queuedReplan = true; return; }
   const [A,B] = S.src, R = $("#readout");
   if (!A || !B){
     S.plan = null; $("#render").disabled = true; $("#syncNote").textContent = "";
@@ -1323,7 +1342,6 @@ function replan(){
 /* =====================================================================
    12. EXPORT
    ===================================================================== */
-let busy = false;
 const currentFormat = () => FORMATS.find(f => f.id === $("#fmt").value) || FORMATS[0];
 
 async function render(){
@@ -1334,16 +1352,16 @@ async function render(){
   const say = m => { btn.textContent = m; };
   const fmt = currentFormat();
   try {
-    const plan = S.plan, g = geometry();
+    const plan = S.plan, g = geometry(), view = renderView(plan);
     const W = Math.max(2, Math.round(g.w*S.outScale) & ~1);
     const H = Math.max(2, Math.round(g.h*S.outScale) & ~1);
     let blob, warning = "";
 
-    if (fmt.kind === "gif")            blob = await exportGIF(W,H,g,plan,say);
-    else if (fmt.kind === "webp")      blob = await exportWebP(W,H,g,plan,say);
-    else if (fmt.kind === "apng")      blob = await exportAPNG(W,H,g,plan,say);
-    else if (fmt.kind === "recorder")  blob = await exportRecorder(fmt,W,H,g,plan,say);
-    else                               blob = await exportCoded(fmt,W,H,g,plan,say);
+    if (fmt.kind === "gif")            blob = await exportGIF(W,H,g,plan,say,view);
+    else if (fmt.kind === "webp")      blob = await exportWebP(W,H,g,plan,say,view);
+    else if (fmt.kind === "apng")      blob = await exportAPNG(W,H,g,plan,say,view);
+    else if (fmt.kind === "recorder")  blob = await exportRecorder(fmt,W,H,g,plan,say,view);
+    else                               blob = await exportCoded(fmt,W,H,g,plan,say,view);
 
     /* Every format is verified before it is offered, not just the coded ones.
        Real-time capture builds its own frame count from the wall clock, so
@@ -1363,7 +1381,7 @@ async function render(){
         .find(m => { try { return MediaRecorder.isTypeSupported(m); } catch { return false; } });
       if (!fallback) throw new Error("The muxed file didn't play back here.");
       warning = "Muxed file failed verification — recorded in real time instead.";
-      blob = await exportRecorder({mime:fallback}, W, H, g, plan, say);
+      blob = await exportRecorder({mime:fallback}, W, H, g, plan, say, view);
       /* The substitute gets checked too. Offering a file we already know is
          broken would defeat the point of checking at all. */
       if (!(await verifyBlob(blob, "video")).ok)
@@ -1386,11 +1404,14 @@ async function render(){
     out.innerHTML = `<div class="readout warn">Couldn't render: ${esc(e.message || e)}</div>`;
   } finally {
     busy = false; $("#render").disabled = false; $("#render").textContent = "Render";
+    /* Cleared before the queued replan runs, so it is not deferred forever, and
+       inside finally so a thrown render cannot leave the app permanently stuck. */
+    if (queuedReplan){ queuedReplan = false; replan(); }
   }
 }
 
-async function exportGIF(W,H,g,plan,say){
-  const R = makeRenderCanvas(W,H,g,false);
+async function exportGIF(W,H,g,plan,say,view){
+  const R = makeRenderCanvas(W,H,g,false,view);
   const rgba = [];
   for (let i=0;i<plan.count;i++){
     R.at(plan.times[i]+1);
@@ -1429,8 +1450,8 @@ async function exportGIF(W,H,g,plan,say){
   return new Blob([encodeGIF(W,H,pal,count,frames,transparentIndex)], {type:"image/gif"});
 }
 
-async function exportWebP(W,H,g,plan,say){
-  const R = makeRenderCanvas(W,H,g,false);
+async function exportWebP(W,H,g,plan,say,view){
+  const R = makeRenderCanvas(W,H,g,false,view);
   const parts = []; let hasAlpha = false;
   for (let i=0;i<plan.count;i++){
     R.at(plan.times[i]+1);
@@ -1445,8 +1466,8 @@ async function exportWebP(W,H,g,plan,say){
   return new Blob([muxWebP(W,H,parts,hasAlpha)], {type:"image/webp"});
 }
 
-async function exportAPNG(W,H,g,plan,say){
-  const R = makeRenderCanvas(W,H,g,false);
+async function exportAPNG(W,H,g,plan,say,view){
+  const R = makeRenderCanvas(W,H,g,false,view);
   const stills = [];
   for (let i=0;i<plan.count;i++){
     R.at(plan.times[i]+1);
@@ -1460,9 +1481,9 @@ async function exportAPNG(W,H,g,plan,say){
   return new Blob([muxAPNG(stills, plan.delaysMs, W, H)], {type:"image/png"});
 }
 
-async function exportCoded(fmt, W, H, g, plan, say){
+async function exportCoded(fmt, W, H, g, plan, say, view){
   const {samples, description} =
-    await encodeWithVideoEncoder(fmt, W, H, plan, g, S.quality, say);
+    await encodeWithVideoEncoder(fmt, W, H, plan, g, S.quality, say, view);
   say("Muxing"); await idle(16);
   if (fmt.kind === "ebml"){
     const codecPrivate = fmt.codecId === "V_AV1"
@@ -1478,8 +1499,8 @@ async function exportCoded(fmt, W, H, g, plan, say){
   return new Blob([bytes], {type: fmt.avif ? "image/avif" : "video/mp4"});
 }
 
-async function exportRecorder(fmt, W, H, g, plan, say){
-  const R = makeRenderCanvas(W,H,g,true);
+async function exportRecorder(fmt, W, H, g, plan, say, view){
+  const R = makeRenderCanvas(W,H,g,true,view);
   const fps = Math.min(50, Math.max(10, Math.round(plan.count/(plan.outDur/1000))));
   const stream = R.c.captureStream(fps);
   const rec = new MediaRecorder(stream, {mimeType: fmt.mime,
@@ -1532,6 +1553,10 @@ function disposeSource(i){
 const loading = [false, false];
 async function accept(i, file){
   if (loading[i]) return;
+  /* disposeSource() closes the previous source's ImageBitmaps. Doing that while
+     a render is drawing from them throws mid-encode, so this one is refused
+     rather than queued -- a file drop is easy to repeat, a lost render is not. */
+  if (busy){ renderSlot(i, "Rendering — try again when it finishes.", true); return; }
   loading[i] = true;
   renderSlot(i, "Decoding…");
   try {
