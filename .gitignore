@@ -11,3 +11,7 @@ out/
 
 # macOS
 .DS_Store
+
+# Personal, machine-specific Claude Code settings (pins gh to the immanuelqrw
+# account for this repo). Never committed -- the path is local to one machine.
+.claude/settings.local.json
