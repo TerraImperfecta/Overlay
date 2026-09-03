@@ -28,6 +28,12 @@ Notable changes to Overlay. Format follows [Keep a Changelog](https://keepachang
   which is what actually catches a truncated GIF or APNG — those decode frame 0 quite happily
   from a partial file.
 
+- `av1ConfigRecord` now consumes `operating_parameters_info()`. It read the per-operating-point
+  decoder-model flag but not the payload it introduces, leaving every operating point after the
+  first parsed from the wrong bit offset. Latent, since only operating point 0 is used, but it
+  would surface the moment anyone parsed further. The parser is split out as
+  `parseSequenceHeader` so it can be tested against hand-built headers.
+
 ### Changed
 
 - `PLAN.md` section 4 records that all four of its suspects were put in front of third-party
