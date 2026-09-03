@@ -23,6 +23,11 @@ Notable changes to Overlay. Format follows [Keep a Changelog](https://keepachang
 
 - The animated AVIF format note now says macOS Preview and Quick Look cannot open it.
 
+- `verifyBlob()` now covers every output format, not just the coded ones. GIF, WebP, APNG and
+  the `MediaRecorder` fallback were being offered unverified. It also asserts the frame count,
+  which is what actually catches a truncated GIF or APNG — those decode frame 0 quite happily
+  from a partial file.
+
 ### Changed
 
 - `PLAN.md` section 4 records that all four of its suspects were put in front of third-party
