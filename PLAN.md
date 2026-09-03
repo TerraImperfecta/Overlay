@@ -266,9 +266,24 @@ readout.
 **Composite.** Blending with a transparent background and opacity below 50% — GIF's 1-bit
 alpha thresholds those pixels away entirely. Confirm the WebP and APNG outputs keep them.
 
-**Colour.** An overlay of two GIFs that together use under 255 colours must take the exact
-palette path (the readout should not report loss). Scaling output below 100% introduces
-interpolation and should push it to median cut.
+**Colour.** ~~Scaling output below 100% introduces interpolation and should push it to median
+cut.~~ **Corrected in #25.** Two things here were wrong.
+
+The boundary is 255, not "under 255": the exact path holds *at* 255 distinct opaque colours
+and gives way at 256, because one index is reserved for transparency. Transparent pixels are
+not counted at all, so an image can carry hundreds of RGB values and still take the exact path.
+
+And scaling *down* does not force median cut — it usually does the opposite. Interpolation does
+manufacture colours, but the count is also bounded by the number of pixels, and shrinking the
+output cuts that faster than blending adds to it. On the corpus pair: ×8 gives 93 colours, ×1
+gives 5, ×0.55 gives 9. **Enlarging** is what adds colours. Reaching 256 at all needs a source
+with real colour depth, not a scale change.
+
+Median cut is also bounded by its 32×32×32 histogram, so it returns fewer than 255 entries when
+the colours cluster into few bins. That is correct, not truncation.
+
+The readout the original entry assumed exists now does: a GIF export reports either
+`Exact palette · N colours, none lost` or `Palette reduced to N colours`.
 
 **Reload behaviour.** Drop three different files into the same slot in succession. The slot
 must show exactly one thumbnail each time, the readout must update, and memory must not grow.

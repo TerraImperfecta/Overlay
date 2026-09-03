@@ -703,7 +703,8 @@ async function gifFromFrames(job, report){
     if (i%8===0) await report(`Encoding ${i+1}/${count}`);
   }
   await report("Writing file");
-  return encodeGIF(W,H,pal,colorCount,frames,transparentIndex);
+  return {bytes: encodeGIF(W,H,pal,colorCount,frames,transparentIndex),
+          palette: {exact: !!exact, colors: colorCount}};
 }
 
 /* The worker source is assembled from the functions above rather than written
@@ -717,8 +718,8 @@ function gifWorkerSource(){
 
 self.onmessage = async e => {
   try {
-    const bytes = await gifFromFrames(e.data, text => self.postMessage({type:"progress", text}));
-    self.postMessage({type:"done", bytes}, [bytes.buffer]);
+    const out = await gifFromFrames(e.data, text => self.postMessage({type:"progress", text}));
+    self.postMessage({type:"done", bytes: out.bytes, palette: out.palette}, [out.bytes.buffer]);
   } catch (err){
     self.postMessage({type:"error", message: (err && err.message) || String(err)});
   }
@@ -748,7 +749,7 @@ function runGifWorker(worker, job, say){
         /* Progress messages double as cancellation checkpoints: the main thread
            is otherwise sitting in one long await with nowhere to notice. */
         if (cancelling){ worker.terminate(); reject(new Cancelled()); }
-      } else if (m.type === "done") resolve(m.bytes);
+      } else if (m.type === "done") resolve({bytes: m.bytes, palette: m.palette});
       else reject(new Error(m.message || "The GIF worker failed."));
     };
     worker.onerror = e => reject(new Error(e.message || "The GIF worker failed to run."));
@@ -1329,6 +1330,7 @@ function makeRenderCanvas(W, H, g, opaque, view){
 }
 
 let busy = false;      // set for the whole of a render, cleared in its finally
+let lastGifPalette = null;  // {exact, colors} from the most recent GIF export
 let cancelling = false;
 
 /* Thrown to unwind a render the user asked to stop. Marked rather than matched
@@ -1455,7 +1457,7 @@ const currentFormat = () => FORMATS.find(f => f.id === $("#fmt").value) || FORMA
 
 async function render(){
   if (busy || !S.plan) return;
-  busy = true; cancelling = false;
+  busy = true; cancelling = false; lastGifPalette = null;
   const btn = $("#render"), out = $("#out"), stop = $("#cancel");
   btn.disabled = true; out.innerHTML = "";
   stop.hidden = false; stop.disabled = false; stop.textContent = "Cancel";
@@ -1508,6 +1510,10 @@ async function render(){
         <b>${W}×${H}</b> · ${plan.count} frames · ${(plan.outDur/1000).toFixed(2)}s ·
         <b>${kb>1024 ? (kb/1024).toFixed(2)+" MB" : Math.round(kb)+" KB"}</b>
         ${warning ? `<div class="warn">${esc(warning)}</div>` : ""}
+        ${lastGifPalette ? `<div class="${lastGifPalette.exact ? "ok" : "warn"}">${
+          lastGifPalette.exact
+            ? `Exact palette · ${lastGifPalette.colors} colours, none lost`
+            : `Palette reduced to ${lastGifPalette.colors} colours`}</div>` : ""}
       </div>
       <a class="dl" href="${url}" download="overlay.${fmt.ext}">Download ${fmt.ext.toUpperCase()}</a>`;
   } catch (e){
@@ -1540,12 +1546,16 @@ async function exportGIF(W,H,g,plan,say,view){
   /* The worker is created before anything is transferred, so that failing to
      start still leaves the buffers intact for the fallback below. */
   const worker = makeGifWorker();
+  let out;
   if (worker){
-    try { return new Blob([await runGifWorker(worker, job, say)], {type:"image/gif"}); }
+    try { out = await runGifWorker(worker, job, say); }
     finally { worker.terminate(); }
+  } else {
+    out = await gifFromFrames(job, async text => { say(text); await breathe(); });
   }
-  const bytes = await gifFromFrames(job, async text => { say(text); await breathe(); });
-  return new Blob([bytes], {type:"image/gif"});
+  /* Which palette path ran is only knowable in here, and the readout wants it. */
+  lastGifPalette = out.palette;
+  return new Blob([out.bytes], {type:"image/gif"});
 }
 
 async function exportWebP(W,H,g,plan,say,view){
