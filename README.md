@@ -32,8 +32,14 @@ shrinks rather than throws on browsers with narrower support.
 index.html    the entire tool — markup, styles and script in one file
 PLAN.md       outstanding work, and the decisions behind the code
 corpus/       generated GIFs that exercise the decoder's awkward cases
-test/         Playwright suite, and a dependency-free static server
+test/         Playwright suite, a static server, and the validation tools
 ```
+
+`npm run fixtures` drives the real app in a real browser and writes one file per
+output format to `out/`, alongside the plan they were meant to encode. Add
+`-- --stress` for a long, constant-delay plan that reaches the WebM cluster break
+and `stts` run-length compression. `test/inspect_container.py` then reads per-frame
+timing straight out of an MP4 or WebM.
 
 The script is divided by numbered banner comments, 0–13: icon, GIF decoder, source loader,
 timeline merge, GIF quantizer/encoder, WebP muxer, APNG muxer, ISOBMFF muxer (MP4 + AVIF),
