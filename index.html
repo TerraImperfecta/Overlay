@@ -425,7 +425,7 @@ async function decodeImage(file, type, ext, onProgress){
                      /^image\/(webp|avif|png|apng)$/.test(guess);
   return { frames:[{bitmap, delay:100}], width:bitmap.width, height:bitmap.height, kind:"still",
            note: (animatable && typeof ImageDecoder === "undefined")
-                 ? "still — no ImageDecoder in this browser" : "" };
+                 ? "first frame only — no ImageDecoder" : "" };
 }
 
 async function decodeVideo(file, onProgress){
@@ -1567,8 +1567,11 @@ async function accept(i, file){
       c.getContext("2d").drawImage(src.frames[0].bitmap, 0, 0);
       src.thumb = c.toDataURL("image/png");
     } else src.thumb = URL.createObjectURL(file);
+    /* loadSource may have left a note here explaining a fallback; keep it. */
+    const note = src.meta;
     src.meta = `${src.width}×${src.height} · ${src.frames.length}f · ` +
-               (src.static ? "still" : (src.duration/1000).toFixed(2)+"s");
+               (src.static ? "still" : (src.duration/1000).toFixed(2)+"s") +
+               (note ? " · " + note : "");
     disposeSource(i);
     S.src[i] = src;
     renderSlot(i); replan();
