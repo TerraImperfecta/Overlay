@@ -219,8 +219,13 @@ will point at the box far faster than reading the spec again.
    keep the page responsive; those are now `await breathe()`, the same yield plus a check for
    whether Cancel was pressed. Cancellation therefore lands between frames rather than
    part-way through writing one, and needs no new plumbing through the encoders.
-8. Move GIF quantization and LZW encoding into a Worker. The median-cut LUT build blocks the
-   main thread for a noticeable beat on large outputs.
+8. ~~Move GIF quantization and LZW encoding into a Worker.~~ **Done in #29.** The longest
+   main-thread block during a 36-frame export went from 34 / 69 / 136 ms at 256² / 512² / 768²
+   to a flat 16 / 15 / 18 ms — what remains is the compositing loop, which needs the canvas and
+   so stays put. The worker source is assembled from the existing functions with
+   `Function.prototype.toString`, so there is one implementation rather than two, and it falls
+   back to running the same code on the main thread where a Worker cannot be created.
+   `npm run bench:gif` reproduces the figures.
 9. Per-layer placement. Only the overlay can be moved and scaled; the base is pinned at
    natural size. Generalising to two independently placed layers touches `geometry()`,
    `composite()` and the drag handler.

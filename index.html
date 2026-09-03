@@ -668,6 +668,94 @@ function encodeGIF(W,H,palette,colorCount,frames,transparentIndex){
   return w.done();
 }
 
+/* Everything between "here are the composited frames" and "here are the GIF
+   bytes": palette, quantization, inter-frame diffing, LZW. Kept free of any
+   reference to the page -- no S, no DOM -- because it is also the body of the
+   worker below, stringified. `report` is awaited so the main-thread copy can
+   yield between chunks; in the worker it just posts a message. */
+async function gifFromFrames(job, report){
+  const {W, H, count, delaysCs, needsAlpha, rgba} = job;
+  await report("Building palette");
+  const {palette, exact, lut, count: colorCount} = buildPalette(rgba, true);
+  const transparentIndex = colorCount;
+  const pal = new Uint8Array((colorCount+1)*3); pal.set(palette.subarray(0, colorCount*3));
+  const map = (r,gg,b) => exact ? exact.get((r<<16)|(gg<<8)|b)
+                                : lut[((r>>3)<<10)|((gg>>3)<<5)|(b>>3)];
+  const frames = []; let prev = null;
+  for (let i=0;i<count;i++){
+    const px = rgba[i], idx = new Uint8Array(W*H);
+    for (let p=0,j=0;p<px.length;p+=4,j++)
+      idx[j] = px[p+3]<128 ? transparentIndex : map(px[p],px[p+1],px[p+2]);
+    if (!needsAlpha && prev){
+      let x0=W,y0=H,x1=-1,y1=-1;
+      for (let y=0,j=0;y<H;y++) for (let x=0;x<W;x++,j++)
+        if (idx[j]!==prev[j]){ if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y; }
+      if (x1<0){ x0=y0=0; x1=y1=0; }
+      const fw=x1-x0+1, fh=y1-y0+1, sub=new Uint8Array(fw*fh);
+      for (let y=0;y<fh;y++) for (let x=0;x<fw;x++){
+        const j=(y+y0)*W+(x+x0);
+        sub[y*fw+x] = idx[j]===prev[j] ? transparentIndex : idx[j];
+      }
+      frames.push({x:x0,y:y0,w:fw,h:fh,indices:sub,delayCs:delaysCs[i],disposal:1});
+    } else frames.push({x:0,y:0,w:W,h:H,indices:idx,delayCs:delaysCs[i],
+                        disposal: needsAlpha?2:1});
+    prev = idx;
+    if (i%8===0) await report(`Encoding ${i+1}/${count}`);
+  }
+  await report("Writing file");
+  return encodeGIF(W,H,pal,colorCount,frames,transparentIndex);
+}
+
+/* The worker source is assembled from the functions above rather than written
+   out a second time, so there is exactly one implementation to keep correct.
+   It is a Blob URL rather than a file because index.html still ships as one
+   file; if a build step ever lands, this can become a real module. */
+let gifWorkerURL = null;
+function gifWorkerSource(){
+  return [BW, buildPalette, lzwEncode, encodeGIF, gifFromFrames]
+    .map(fn => fn.toString()).join("\n\n") + `
+
+self.onmessage = async e => {
+  try {
+    const bytes = await gifFromFrames(e.data, text => self.postMessage({type:"progress", text}));
+    self.postMessage({type:"done", bytes}, [bytes.buffer]);
+  } catch (err){
+    self.postMessage({type:"error", message: (err && err.message) || String(err)});
+  }
+};`;
+}
+
+/* Null when Workers are unavailable or refused, so the caller can fall back to
+   running the same code on the main thread. */
+function makeGifWorker(){
+  if (typeof Worker === "undefined") return null;
+  try {
+    if (!gifWorkerURL)
+      gifWorkerURL = URL.createObjectURL(new Blob([gifWorkerSource()], {type:"text/javascript"}));
+    return new Worker(gifWorkerURL);
+  } catch { return null; }
+}
+
+/* Runs the job in `worker`, relaying progress and honouring Cancel. The rgba
+   buffers are transferred, not copied -- they are several megabytes at the
+   sizes where this matters, and nothing needs them afterwards. */
+function runGifWorker(worker, job, say){
+  return new Promise((resolve, reject) => {
+    worker.onmessage = e => {
+      const m = e.data;
+      if (m.type === "progress"){
+        say(m.text);
+        /* Progress messages double as cancellation checkpoints: the main thread
+           is otherwise sitting in one long await with nowhere to notice. */
+        if (cancelling){ worker.terminate(); reject(new Cancelled()); }
+      } else if (m.type === "done") resolve(m.bytes);
+      else reject(new Error(m.message || "The GIF worker failed."));
+    };
+    worker.onerror = e => reject(new Error(e.message || "The GIF worker failed to run."));
+    worker.postMessage(job, job.rgba.map(a => a.buffer));
+  });
+}
+
 /* =====================================================================
    5. ANIMATED WEBP  (still WebPs remuxed into ANMF chunks)
    ===================================================================== */
@@ -1446,36 +1534,18 @@ async function exportGIF(W,H,g,plan,say,view){
     rgba.push(R.cx.getImageData(0,0,W,H).data);
     if (i%8===0){ say(`Compositing ${i+1}/${plan.count}`); await breathe(); }
   }
-  say("Building palette"); await breathe(16);
-  const needsAlpha = S.bg === "transparent";
-  const {palette, exact, lut, count} = buildPalette(rgba, true);
-  const transparentIndex = count;
-  const pal = new Uint8Array((count+1)*3); pal.set(palette.subarray(0,count*3));
-  const map = (r,gg,b) => exact ? exact.get((r<<16)|(gg<<8)|b)
-                                : lut[((r>>3)<<10)|((gg>>3)<<5)|(b>>3)];
-  const frames = []; let prev = null;
-  for (let i=0;i<plan.count;i++){
-    const px = rgba[i], idx = new Uint8Array(W*H);
-    for (let p=0,j=0;p<px.length;p+=4,j++)
-      idx[j] = px[p+3]<128 ? transparentIndex : map(px[p],px[p+1],px[p+2]);
-    if (!needsAlpha && prev){
-      let x0=W,y0=H,x1=-1,y1=-1;
-      for (let y=0,j=0;y<H;y++) for (let x=0;x<W;x++,j++)
-        if (idx[j]!==prev[j]){ if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y; }
-      if (x1<0){ x0=y0=0; x1=y1=0; }
-      const fw=x1-x0+1, fh=y1-y0+1, sub=new Uint8Array(fw*fh);
-      for (let y=0;y<fh;y++) for (let x=0;x<fw;x++){
-        const j=(y+y0)*W+(x+x0);
-        sub[y*fw+x] = idx[j]===prev[j] ? transparentIndex : idx[j];
-      }
-      frames.push({x:x0,y:y0,w:fw,h:fh,indices:sub,delayCs:plan.delaysCs[i],disposal:1});
-    } else frames.push({x:0,y:0,w:W,h:H,indices:idx,delayCs:plan.delaysCs[i],
-                        disposal: needsAlpha?2:1});
-    prev = idx;
-    if (i%8===0){ say(`Encoding ${i+1}/${plan.count}`); await breathe(); }
+  const job = {W, H, count: plan.count, delaysCs: Array.from(plan.delaysCs),
+               needsAlpha: view ? view.bg === "transparent" : S.bg === "transparent", rgba};
+
+  /* The worker is created before anything is transferred, so that failing to
+     start still leaves the buffers intact for the fallback below. */
+  const worker = makeGifWorker();
+  if (worker){
+    try { return new Blob([await runGifWorker(worker, job, say)], {type:"image/gif"}); }
+    finally { worker.terminate(); }
   }
-  say("Writing file"); await breathe(16);
-  return new Blob([encodeGIF(W,H,pal,count,frames,transparentIndex)], {type:"image/gif"});
+  const bytes = await gifFromFrames(job, async text => { say(text); await breathe(); });
+  return new Blob([bytes], {type:"image/gif"});
 }
 
 async function exportWebP(W,H,g,plan,say,view){
