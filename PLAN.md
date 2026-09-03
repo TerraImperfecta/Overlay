@@ -198,8 +198,15 @@ will point at the box far faster than reading the spec again.
 2. Validate the muxed files externally: `ffprobe` for MP4/WebM, `avifdec` or `ffprobe` for
    AVIF, `webpinfo` for animated WebP, `pngcheck -v` for APNG. Confirm frame counts and
    per-frame durations match `plan.delaysMs` exactly.
-3. Test in Firefox and Safari. `ImageDecoder` and `VideoEncoder` availability differ; confirm
-   the format list degrades sensibly rather than throwing.
+3. ~~Test in Firefox and Safari.~~ **Done in #19**, and automated: `test/degrade.spec.js` runs
+   on Chromium, Firefox and WebKit. Firefox offers all nine formats. WebKit has no
+   `ImageDecoder` and no canvas WebP encoding, so it correctly offers eight — WebP drops out —
+   and all eight work. The list shrinks rather than lying, which was the requirement.
+
+   The one thing that degrades *invisibly* is input: without `ImageDecoder`, `decodeImage()`
+   falls back to `createImageBitmap`, so an animated WebP, APNG or AVIF loads as its first
+   frame alone. The slot now says why. Note that Playwright's webkit is a WebKit build rather
+   than shipping Safari; they differ most on codecs Safari gets from system frameworks.
 4. Confirm the AVIF `meta`/`iloc` path by opening the output in a viewer that shows the still
    fallback (macOS Preview, or `avifdec --index 0`).
 5. Exercise `av1ConfigRecord`'s parser deliberately — temporarily force `description` to

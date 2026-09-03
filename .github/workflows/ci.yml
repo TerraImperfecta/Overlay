@@ -24,18 +24,52 @@ jobs:
 
       - run: npm ci
 
-      # Only Chromium: these tests assert exact decoder output, and Chromium is
-      # where ImageDecoder and WebCodecs are complete enough to be an oracle.
-      # Firefox and Safari matter for capability *degradation*, which is a
-      # different shape of test -- see issue #19.
-      - run: npx playwright install --with-deps chromium
+      # Chromium runs everything: it is where ImageDecoder and WebCodecs are
+      # complete enough to be an oracle for exact decoder output. Firefox runs
+      # degrade.spec.js only, which asks the weaker and browser-appropriate
+      # question -- does the format list shrink honestly (#19). WebKit runs in
+      # its own job below; see the note there.
+      - run: npx playwright install --with-deps chromium firefox
 
-      - run: npm test
+      - run: npm test -- --project=chromium --project=firefox
 
       - uses: actions/upload-artifact@v7
         if: ${{ !cancelled() && failure() }}
         with:
           name: playwright-report
+          path: playwright-report/
+          retention-days: 14
+
+  # WebKit belongs on macOS, and not merely because it crashes on the Linux
+  # runner (it does -- "Target crashed" on page load, with dependencies
+  # installed). Safari exists only on Apple platforms, and WebKit's Linux port
+  # uses entirely different media backends from the macOS one. A Linux WebKit
+  # result would be weak evidence about Safari even if it ran, which is the
+  # question #19 actually cares about.
+  #
+  # Still a WebKit build rather than shipping Safari -- they differ on codecs
+  # Safari gets from system frameworks -- so this is a strong hint, not proof.
+  webkit:
+    name: WebKit degradation (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npx playwright install webkit
+
+      - run: npm test -- --project=webkit
+
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() && failure() }}
+        with:
+          name: playwright-report-webkit
           path: playwright-report/
           retention-days: 14
 

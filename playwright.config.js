@@ -2,9 +2,15 @@
 // than a DOM emulation: ImageDecoder and WebCodecs have no shim worth trusting,
 // and they are exactly what needs testing.
 //
-// Chromium only, for now. PLAN.md section 5 item 3 wants Firefox and Safari
-// checked too, but that is about capability *degradation* -- a different shape
-// of test than these, which assert exact decoder output. See issue #19.
+// Only degrade.spec.js runs on all three engines. Everything else asserts exact
+// decoder output and stays on Chromium, which is where ImageDecoder and
+// WebCodecs are complete enough to be an oracle. Firefox and WebKit are asked a
+// different and weaker question -- does the format list shrink honestly -- which
+// is issue #19.
+//
+// Playwright's webkit is a WebKit build, not shipping Safari; they differ most
+// on codecs Safari gets from system frameworks. Evidence about WebKit, a strong
+// hint about Safari.
 
 const { defineConfig, devices } = require("@playwright/test");
 
@@ -21,7 +27,11 @@ module.exports = defineConfig({
     baseURL: `http://localhost:${PORT}`,
     trace: "retain-on-failure",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    { name: "firefox", use: { ...devices["Desktop Firefox"] }, testMatch: /degrade\.spec\.js/ },
+    { name: "webkit", use: { ...devices["Desktop Safari"] }, testMatch: /degrade\.spec\.js/ },
+  ],
   webServer: {
     command: `node test/serve.js ${PORT}`,
     url: `http://localhost:${PORT}/index.html`,
