@@ -45,6 +45,10 @@ Notable changes to Overlay. Format follows [Keep a Changelog](https://keepachang
   finishes; loading a source is refused while one is running, since disposing the previous
   source closes bitmaps the encoder is still drawing from.
 
+- A Cancel button, shown only while a render is running. It stops between frames, closes the
+  `VideoEncoder`, tears down the recorder's capture stream, and offers nothing rather than a
+  partial file.
+
 ### Changed
 
 - `PLAN.md` section 4 records that all four of its suspects were put in front of third-party
