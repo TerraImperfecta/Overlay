@@ -1,0 +1,266 @@
+// Firefox and Safari: the format list must degrade, not throw (issue #19).
+//
+// This is the one spec that runs on all three engines. The others assert exact
+// decoder output and are Chromium-only, because Chromium is where ImageDecoder
+// and WebCodecs are complete enough to be an oracle.
+//
+// So nothing here asserts that a particular format exists. The contract is
+// weaker and more useful: whatever buildFormats() decides to offer must
+// actually work when the user picks it. A list that advertises a format this
+// browser cannot produce is the failure being hunted -- offering nothing is
+// merely disappointing, offering something broken is a bug.
+//
+// A note on what "Safari" means here: Playwright's webkit is a WebKit build,
+// not shipping Safari. They differ, most notably on codecs Safari gets from
+// system frameworks. Treat a webkit result as evidence about WebKit and a
+// strong hint about Safari, not as proof.
+
+const { test, expect } = require("@playwright/test");
+
+async function capabilities(page) {
+  return page.evaluate(async () => {
+    const probe = document.createElement("canvas");
+    probe.width = probe.height = 8;
+    const toBlobType = (type) =>
+      new Promise((r) => probe.toBlob((b) => r(!!b && b.type === type), type, 0.8));
+
+    const codecs = {};
+    if (typeof VideoEncoder !== "undefined") {
+      for (const c of ["av01.0.04M.08", "avc1.42E01E", "vp09.00.10.08", "vp8"]) {
+        try {
+          const r = await VideoEncoder.isConfigSupported({
+            codec: c, width: 256, height: 256, bitrate: 1e6, framerate: 30 });
+          codecs[c] = !!(r && r.supported);
+        } catch (e) { codecs[c] = `threw ${e.name}`; }
+      }
+    }
+
+    let imageDecoderTypes = null;
+    if (typeof ImageDecoder !== "undefined") {
+      imageDecoderTypes = {};
+      for (const t of ["image/gif", "image/webp", "image/png", "image/avif"]) {
+        try { imageDecoderTypes[t] = await ImageDecoder.isTypeSupported(t); }
+        catch (e) { imageDecoderTypes[t] = `threw ${e.name}`; }
+      }
+    }
+
+    return {
+      ua: navigator.userAgent,
+      ImageDecoder: typeof ImageDecoder !== "undefined",
+      VideoEncoder: typeof VideoEncoder !== "undefined",
+      MediaRecorder: typeof MediaRecorder !== "undefined",
+      OffscreenCanvas: typeof OffscreenCanvas !== "undefined",
+      canvasWebP: await toBlobType("image/webp"),
+      canvasPNG: await toBlobType("image/png"),
+      codecs,
+      imageDecoderTypes,
+      formats: FORMATS.map((f) => ({ id: f.id, label: f.label, recorder: !!f.recorder })),
+    };
+  });
+}
+
+async function loadSources(page) {
+  return page.evaluate(async () => {
+    async function loadInto(i, name) {
+      const buf = await (await fetch("/corpus/" + name)).arrayBuffer();
+      const src = await loadSource(new File([buf], name, { type: "image/gif" }), () => {});
+      if (S.src[i]) disposeSource(i);
+      S.src[i] = src;
+    }
+    await loadInto(0, "05-subrect.gif");
+    await loadInto(1, "06-delay-zero.gif");
+    S.outScale = 4;
+    S.sync = "auto";
+    replan();
+    return { count: S.plan.count, delaysMs: S.plan.delaysMs };
+  });
+}
+
+test("the page comes up and probes capabilities without throwing", async ({ page }, testInfo) => {
+  const problems = [];
+  page.on("pageerror", (e) => problems.push(`pageerror: ${e.message}`));
+  page.on("console", (m) => { if (m.type() === "error") problems.push(`console: ${m.text()}`); });
+
+  await page.goto("/index.html");
+  await page.waitForFunction(() => document.querySelector("#fmt")?.options.length > 0);
+
+  const caps = await capabilities(page);
+  // Recorded rather than asserted: the capability set is the finding, and it is
+  // what makes a failure elsewhere in this file interpretable.
+  await testInfo.attach("capabilities.json", {
+    body: JSON.stringify(caps, null, 1), contentType: "application/json" });
+  console.log(`\n[${testInfo.project.name}] ${caps.ua}`);
+  console.log(`[${testInfo.project.name}] ImageDecoder=${caps.ImageDecoder} ` +
+              `VideoEncoder=${caps.VideoEncoder} MediaRecorder=${caps.MediaRecorder} ` +
+              `OffscreenCanvas=${caps.OffscreenCanvas} canvasWebP=${caps.canvasWebP}`);
+  console.log(`[${testInfo.project.name}] codecs: ${JSON.stringify(caps.codecs)}`);
+  console.log(`[${testInfo.project.name}] formats: ${caps.formats.map((f) => f.id).join(", ")}`);
+
+  expect(problems, `startup problems: ${problems.join(" | ")}`).toEqual([]);
+});
+
+test("the format list is never empty and always includes GIF", async ({ page }) => {
+  await page.goto("/index.html");
+  await page.waitForFunction(() => document.querySelector("#fmt")?.options.length > 0);
+  const caps = await capabilities(page);
+
+  // GIF's decoder and encoder are both ours and depend on no browser codec API,
+  // which is a large part of why they are hand-written. If GIF ever drops off
+  // the list, the probing logic is wrong rather than the browser being narrow.
+  expect(caps.formats.length).toBeGreaterThan(0);
+  expect(caps.formats.map((f) => f.id)).toContain("gif");
+});
+
+test("MediaRecorder appears only as a labelled last resort", async ({ page }) => {
+  await page.goto("/index.html");
+  await page.waitForFunction(() => document.querySelector("#fmt")?.options.length > 0);
+  const caps = await capabilities(page);
+
+  const recorders = caps.formats.filter((f) => f.recorder);
+  if (recorders.length) {
+    // It is a fallback, not a path: it may only appear when no VideoEncoder
+    // codec was found at all, and must say "(real time)" so nobody picks it
+    // expecting the timeline's timing.
+    const codedNonGif = caps.formats.filter((f) => !f.recorder && f.id !== "gif" &&
+                                                   f.id !== "webp" && f.id !== "apng");
+    expect(codedNonGif).toEqual([]);
+    for (const r of recorders) expect(r.label).toContain("real time");
+  }
+});
+
+test("every format the browser offers actually works", async ({ page }, testInfo) => {
+  await page.goto("/index.html");
+  await page.waitForFunction(() => document.querySelector("#fmt")?.options.length > 0);
+  await loadSources(page);
+
+  const results = await page.evaluate(async () => {
+    const sel = document.querySelector("#fmt"), btn = document.querySelector("#render");
+    const out = document.querySelector("#out"), rows = [];
+    for (const id of [...sel.options].map((o) => o.value)) {
+      sel.value = id;
+      sel.dispatchEvent(new Event("change", { bubbles: true }));
+      out.innerHTML = "";
+      btn.click();
+      const t0 = performance.now();
+      while (performance.now() - t0 < 60000) {
+        await new Promise((r) => setTimeout(r, 100));
+        if (!btn.disabled && out.innerHTML) break;
+      }
+      const a = out.querySelector("a.dl");
+      const warn = out.querySelector(".warn");
+      rows.push({ id, download: !!a, filename: a ? a.getAttribute("download") : null,
+                  message: warn ? warn.textContent.trim() : null });
+    }
+    return rows;
+  });
+
+  await testInfo.attach("formats.json", {
+    body: JSON.stringify(results, null, 1), contentType: "application/json" });
+  for (const r of results) {
+    console.log(`[${testInfo.project.name}] ${r.id.padEnd(10)} ` +
+                `${r.download ? "ok " + r.filename : "FAILED"}${r.message ? "  — " + r.message : ""}`);
+  }
+
+  // The whole point of the issue: the list must shrink rather than lie.
+  for (const r of results) {
+    expect(r.download, `${r.id} was offered but produced no download: ${r.message}`).toBe(true);
+  }
+});
+
+// The branch left over from #21. Chrome 148 supplies no decoderConfig.description,
+// so av1ConfigRecord parses the sequence header itself on every AV1 export. If a
+// browser ever does supply one, the pass-through path runs instead -- and nothing
+// has yet been observed taking it.
+test("record whether this browser supplies an AV1 decoderConfig.description",
+  async ({ page }, testInfo) => {
+    await page.goto("/index.html");
+    await page.waitForFunction(() => typeof av1ConfigRecord === "function");
+
+    const result = await page.evaluate(async () => {
+      if (typeof VideoEncoder === "undefined") return { supported: false, reason: "no VideoEncoder" };
+      let codec = null;
+      for (const c of ["av01.0.08M.08", "av01.0.05M.08", "av01.0.04M.08"]) {
+        try {
+          const r = await VideoEncoder.isConfigSupported({
+            codec: c, width: 64, height: 64, bitrate: 2e5, framerate: 10 });
+          if (r && r.supported) { codec = c; break; }
+        } catch {}
+      }
+      if (!codec) return { supported: false, reason: "no AV1 encoder" };
+
+      let description = null;
+      await new Promise((resolve, reject) => {
+        const enc = new VideoEncoder({
+          output: (chunk, meta) => {
+            if (description === null) {
+              const d = meta && meta.decoderConfig && meta.decoderConfig.description;
+              description = d ? d.byteLength : 0;
+            }
+          },
+          error: reject,
+        });
+        enc.configure({ codec, width: 64, height: 64, bitrate: 2e5, framerate: 10 });
+        const c = document.createElement("canvas");
+        c.width = c.height = 64;
+        c.getContext("2d").fillRect(0, 0, 64, 64);
+        const vf = new VideoFrame(c, { timestamp: 0, duration: 100000 });
+        enc.encode(vf, { keyFrame: true });
+        vf.close();
+        enc.flush().then(() => { enc.close(); resolve(); }, reject);
+      });
+      return { supported: true, codec, descriptionBytes: description };
+    });
+
+    console.log(`[${testInfo.project.name}] AV1 description: ${JSON.stringify(result)}`);
+    await testInfo.attach("av1-description.json", {
+      body: JSON.stringify(result, null, 1), contentType: "application/json" });
+
+    // Deliberately not asserted either way. Both answers are legitimate; the
+    // point is to find out which branch each engine takes.
+    expect(result).toBeTruthy();
+  });
+
+// Input decoding degrades too, and less visibly than the format list does.
+//
+// decodeImage() uses ImageDecoder for WebP, APNG and AVIF, and falls back to
+// createImageBitmap(file) when it is missing -- which yields exactly one frame.
+// So on an engine without ImageDecoder, loading an animated WebP or APNG gets
+// you its first frame and nothing else. That is graceful in the sense that
+// nothing throws, and lossy in the sense that the animation is gone.
+//
+// Round-tripped through the app's own APNG encoder so no fixture is needed:
+// export six frames, feed the result back in, count what comes out.
+test("an animated non-GIF input degrades to a still without ImageDecoder",
+  async ({ page }, testInfo) => {
+    await page.goto("/index.html");
+    await page.waitForFunction(() => document.querySelector("#fmt")?.options.length > 0);
+    await loadSources(page);
+
+    const result = await page.evaluate(async () => {
+      const hasDecoder = typeof ImageDecoder !== "undefined";
+      const plan = S.plan, g = geometry();
+      const W = Math.max(2, Math.round(g.w * S.outScale) & ~1);
+      const H = Math.max(2, Math.round(g.h * S.outScale) & ~1);
+      const apng = await exportAPNG(W, H, g, plan, () => {});
+      const back = await loadSource(new File([apng], "round-trip.png", { type: "image/png" }),
+                                   () => {});
+      const out = { hasDecoder, expected: plan.count, kind: back.kind,
+                    frames: back.frames.length, static: back.static };
+      for (const f of back.frames) f.bitmap.close();
+      return out;
+    });
+
+    console.log(`[${testInfo.project.name}] APNG round-trip: ` +
+                `ImageDecoder=${result.hasDecoder} -> ${result.frames} of ${result.expected} ` +
+                `frames, kind=${result.kind}, static=${result.static}`);
+
+    if (result.hasDecoder) {
+      expect(result.frames).toBe(result.expected);
+      expect(result.static).toBe(false);
+    } else {
+      // The documented consequence, asserted so it cannot change silently.
+      expect(result.frames).toBe(1);
+      expect(result.kind).toBe("still");
+      expect(result.static).toBe(true);
+    }
+  });
