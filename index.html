@@ -1097,7 +1097,7 @@ async function buildFormats(){
   if (av1) FORMATS.push({id:"avif", label:"Animated AVIF", ext:"avif", kind:"iso", codec:av1,
     quality:true, avif:true, entry:"av01",
     brands:["avis","avif","av01","miaf","MA1B","msf1","iso8"],
-    note:"AV1 frames muxed into an image-sequence container. Smallest of the lot, but opaque only — a solid background is used."});
+    note:"AV1 frames muxed into an image-sequence container. Smallest of the lot, but opaque only — a solid background is used. macOS Preview and Quick Look can't open animated AVIF."});
   if (av1) FORMATS.push({id:"mp4-av1", label:"MP4 · AV1", ext:"mp4", kind:"iso", codec:av1,
     quality:true, entry:"av01", brands:["isom","iso2","av01","mp41"],
     note:"Encoded offline at exact frame times. No transparency."});

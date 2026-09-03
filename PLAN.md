@@ -136,7 +136,14 @@ written without access to a real decoder. Do not remove it as "unnecessary overh
 ## 4. Highest-risk code
 
 The muxers in sections 6, 7 and 8 were written from specification without being run against a
-real decoder. Rank your suspicion in this order:
+real decoder. That was true when this was written; it is no longer. Issues #17, #18 and #20
+put all four suspects below in front of third-party decoders — `gifsicle`, `webpinfo`,
+`pngcheck`, `avifdec` and Apple's ImageIO — and **every one of them held**. Per-frame timing
+matches `plan.delaysMs` exactly in every format, `stts` compresses correctly in both shapes,
+and the WebM cluster break is structurally bounded rather than merely lucky.
+
+Keep the ranking below for orientation, but read it now as "where to look first if something
+breaks", not as a list of probable defects. Rank your suspicion in this order:
 
 1. **Animated AVIF** (`buildMetaBox`, `muxISOBMFF` with `avif: true`). Most structurally
    complex, least forgiving. `iloc` offsets, `ipma` property associations and the `avis` brand
@@ -146,13 +153,24 @@ real decoder. Rank your suspicion in this order:
    and builds these same still-item boxes; diffing against a working implementation beats
    rereading the specification. It cannot replace our animated path — see section 7 — but it is
    a useful oracle for this box.
+
+   **Verified in #20.** The extent aliases sample zero exactly, `infe` declares `av01`, and
+   `av1C` is correctly essential in `ipma`. macOS Preview still will not open the file, and
+   that is not this code's fault: Apple's ImageIO gates on the *major brand* and rejects
+   anything branded `avis`, including a still that libavif itself produced once relabelled.
+   Relabelling ours to `avif` makes macOS read it — and makes libavif see one frame instead of
+   six. `avis` is correct and stays.
 2. **`av1ConfigRecord` sequence-header parsing.** Only exercised when Chrome's AV1 encoder
    omits `decoderConfig.description`. The `timing_info` and `decoder_model_info` branches are
    the fiddly part. If `description` is present this code never runs, so the bug can hide.
 3. **EBML `muxWebM`.** `SimpleBlock` relative timecodes are `int16`, so clusters must break
-   before 32767 ms; the current break is at 30000 ms.
+   before 32767 ms; the current break is at 30000 ms. **Verified in #18** on a 44-second clip:
+   two clusters, maximum relative timecode 29600. The margin is structural — the condition is
+   `rel > 30000`, so a relative timecode cannot exceed 30000 whatever the frame timing, leaving
+   2767 ms of headroom.
 4. **ISOBMFF sample tables.** `stts` run-length compression and the single-chunk `stsc`/`stco`
-   arrangement.
+   arrangement. **Verified in #18** in both shapes: uneven delays produce one entry per sample
+   (nothing to compress), 55 identical delays produce a single `(55, 800)` entry.
 
 If a container fails verification, dump the blob to disk and run it through `ffprobe`,
 `mp4box -info`, or `avifdec` before touching the code. The error message from a real parser
