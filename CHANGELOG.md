@@ -53,6 +53,10 @@ Notable changes to Overlay. Format follows [Keep a Changelog](https://keepachang
   main-thread block during a large export drops from 136 ms to 18 ms, and no longer grows with
   output size. `npm run bench:gif` measures it.
 
+- A GIF export now says which palette path it took: `Exact palette · N colours, none lost`, or
+  `Palette reduced to N colours`. Previously nothing told the user whether their colours had
+  survived the encode.
+
 ### Changed
 
 - `PLAN.md` section 4 records that all four of its suspects were put in front of third-party
