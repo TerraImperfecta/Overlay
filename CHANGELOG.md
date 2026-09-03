@@ -21,8 +21,13 @@ Notable changes to Overlay. Format follows [Keep a Changelog](https://keepachang
 - GitHub Actions CI: runs the browser tests, and fails if `corpus/` is not reproducible from
   `corpus/make_corpus.py`.
 
+- The animated AVIF format note now says macOS Preview and Quick Look cannot open it.
+
 ### Changed
 
+- `PLAN.md` section 4 records that all four of its suspects were put in front of third-party
+  decoders in #17, #18 and #20, and every one held. The ranking now reads as "where to look
+  first if something breaks" rather than a list of probable defects.
 - `PLAN.md` section 7's WebAssembly ruling is settled again, on measurement rather than on the
   old dependency rule: nothing published encodes animated AVIF, and the one published animated
   encoder (`webpxmux`, 479 KB brotli) costs ~21× the compressed page to replace the muxer we
