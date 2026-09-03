@@ -1031,26 +1031,47 @@ async function encodeWithVideoEncoder(fmt, W, H, plan, geom, quality, say){
   return {samples, description};
 }
 
-async function verifyBlob(blob, kind){
-  if (kind === "avif"){
-    if (typeof ImageDecoder === "undefined") return true;
+/* Which MIME each still output should decode back as. ImageDecoder reads APNG
+   under "image/png"; there is no separate animated type to ask for. */
+const VERIFY_MIME = {gif:"image/gif", webp:"image/webp", apng:"image/png", avif:"image/avif"};
+
+/* Returns {ok, reason, frames} rather than a bare boolean, because the still
+   formats have no fallback to substitute: if verification fails the user gets
+   an error, and "decoded 5 frames instead of 6" is a far better error than
+   "didn't work". */
+async function verifyBlob(blob, kind, expectFrames){
+  const mime = VERIFY_MIME[kind];
+  if (mime){
+    /* No ImageDecoder means unverifiable, which is not the same as bad. */
+    if (typeof ImageDecoder === "undefined") return {ok:true, reason:"unverified"};
     let dec;
     try {
-      dec = new ImageDecoder({ data: await blob.arrayBuffer(), type:"image/avif" });
+      dec = new ImageDecoder({ data: await blob.arrayBuffer(), type: mime });
       await dec.tracks.ready;
+      /* frameCount is only final once the whole stream has been read. */
+      try { await dec.completed; } catch {}
       const {image} = await dec.decode({frameIndex:0});
-      image.close(); dec.close(); return true;
-    } catch { try { if (dec) dec.close(); } catch {} return false; }
+      image.close();
+      const frames = dec.tracks.selectedTrack.frameCount;
+      dec.close();
+      if (expectFrames && frames !== expectFrames)
+        return {ok:false, frames, reason:`decoded ${frames} frames instead of ${expectFrames}`};
+      return {ok:true, frames};
+    } catch (e){
+      try { if (dec) dec.close(); } catch {}
+      return {ok:false, reason:"didn't decode here"};
+    }
   }
   const url = URL.createObjectURL(blob);
   try {
     const v = document.createElement("video");
     v.muted = true; v.preload = "metadata"; v.src = url;
-    return await new Promise(res => {
+    const ok = await new Promise(res => {
       v.onloadedmetadata = () => res(v.videoWidth > 0);
       v.onerror = () => res(false);
       setTimeout(() => res(false), 4000);
     });
+    return ok ? {ok:true} : {ok:false, reason:"didn't play back here"};
   } finally { URL.revokeObjectURL(url); }
 }
 
@@ -1297,17 +1318,31 @@ async function render(){
     else if (fmt.kind === "webp")      blob = await exportWebP(W,H,g,plan,say);
     else if (fmt.kind === "apng")      blob = await exportAPNG(W,H,g,plan,say);
     else if (fmt.kind === "recorder")  blob = await exportRecorder(fmt,W,H,g,plan,say);
-    else {
-      blob = await exportCoded(fmt,W,H,g,plan,say);
-      say("Verifying");
-      if (!await verifyBlob(blob, fmt.avif ? "avif" : "video")){
-        if (fmt.avif) throw new Error("The muxed AVIF didn't decode here. Try MP4 · AV1 instead.");
-        const fallback = ["video/webm;codecs=vp9","video/webm;codecs=vp8"]
-          .find(m => { try { return MediaRecorder.isTypeSupported(m); } catch { return false; } });
-        if (!fallback) throw new Error("The muxed file didn't play back here.");
-        warning = "Muxed file failed verification — recorded in real time instead.";
-        blob = await exportRecorder({mime:fallback}, W, H, g, plan, say);
-      }
+    else                               blob = await exportCoded(fmt,W,H,g,plan,say);
+
+    /* Every format is verified before it is offered, not just the coded ones.
+       Real-time capture builds its own frame count from the wall clock, so
+       holding the recorder to plan.count would fail it for the wrong reason. */
+    say("Verifying");
+    const still = !!VERIFY_MIME[fmt.kind];
+    const check = await verifyBlob(blob, still ? fmt.kind : (fmt.avif ? "avif" : "video"),
+                                   fmt.kind === "recorder" ? 0 : plan.count);
+    if (!check.ok){
+      if (still)
+        throw new Error(`The ${fmt.label} we produced ${check.reason}.`);
+      if (fmt.avif)
+        throw new Error("The muxed AVIF didn't decode here. Try MP4 · AV1 instead.");
+      if (fmt.kind === "recorder")
+        throw new Error("The recorded clip didn't play back here.");
+      const fallback = ["video/webm;codecs=vp9","video/webm;codecs=vp8"]
+        .find(m => { try { return MediaRecorder.isTypeSupported(m); } catch { return false; } });
+      if (!fallback) throw new Error("The muxed file didn't play back here.");
+      warning = "Muxed file failed verification — recorded in real time instead.";
+      blob = await exportRecorder({mime:fallback}, W, H, g, plan, say);
+      /* The substitute gets checked too. Offering a file we already know is
+         broken would defeat the point of checking at all. */
+      if (!(await verifyBlob(blob, "video")).ok)
+        throw new Error("Neither the muxed file nor the real-time recording played back here.");
     }
 
     const url = URL.createObjectURL(blob);
