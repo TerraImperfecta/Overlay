@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A run is only interesting for the newest commit on a branch.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Browser tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Only Chromium: these tests assert exact decoder output, and Chromium is
+      # where ImageDecoder and WebCodecs are complete enough to be an oracle.
+      # Firefox and Safari matter for capability *degradation*, which is a
+      # different shape of test -- see issue #19.
+      - run: npx playwright install --with-deps chromium
+
+      - run: npm test
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() && failure() }}
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14
+
+  corpus:
+    name: Corpus is reproducible
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      # The committed .gif files must be exactly what the generator produces.
+      # If they drift, either someone edited a fixture by hand or the generator
+      # changed without its output being regenerated -- both make the corpus
+      # untrustworthy, because expected.json describes the generator's intent.
+      - name: Regenerate the corpus
+        run: python3 corpus/make_corpus.py
+
+      - name: Fail if the committed fixtures differ
+        run: |
+          if ! git diff --exit-code --stat corpus/; then
+            echo "::error::corpus/ is not reproducible from corpus/make_corpus.py."
+            echo "Run 'python3 corpus/make_corpus.py' and commit the result."
+            exit 1
+          fi

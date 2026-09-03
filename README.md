@@ -31,6 +31,8 @@ shrinks rather than throws on browsers with narrower support.
 ```
 index.html    the entire tool — markup, styles and script in one file
 PLAN.md       outstanding work, and the decisions behind the code
+corpus/       generated GIFs that exercise the decoder's awkward cases
+test/         Playwright suite, and a dependency-free static server
 ```
 
 The script is divided by numbered banner comments, 0–13: icon, GIF decoder, source loader,
@@ -40,9 +42,18 @@ UI wiring. Keep the banners; they are the map.
 
 ## Run it
 
-Open `index.html`. That is the whole procedure — no build step, no dependencies, no network
-calls, and nothing is uploaded anywhere. It must keep working when opened directly from
-`file://`, which is why there is no bundler and no WebAssembly codec.
+Serve the repository root and open `index.html`:
+
+```
+node test/serve.js          # or any static file server
+```
+
+Nothing is uploaded anywhere, and the tool makes no network calls of its own — every frame is
+decoded, composited and encoded in your browser. The deployed site is static, so the published
+copy at <https://overlay.immanuelqrw.dev> is the same file you are looking at.
+
+It needs to be *served* rather than opened from disk: `ImageDecoder` and Workers want a real
+origin. Opening `index.html` straight from `file://` is no longer supported.
 
 ## Before you change anything
 
