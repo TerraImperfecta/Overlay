@@ -215,8 +215,10 @@ will point at the box far faster than reading the spec again.
 **Then, in rough priority order:**
 
 6. Add a busy guard so `replan()` cannot fire mid-render and swap `S.plan` under the encoder.
-7. Cancel support: an abort button that closes the `VideoEncoder` and stops the loop. Long
-   renders are currently uninterruptible.
+7. ~~Cancel support.~~ **Done in #28.** Every encode loop already paused at `await idle()` to
+   keep the page responsive; those are now `await breathe()`, the same yield plus a check for
+   whether Cancel was pressed. Cancellation therefore lands between frames rather than
+   part-way through writing one, and needs no new plumbing through the encoders.
 8. Move GIF quantization and LZW encoding into a Worker. The median-cut LUT build blocks the
    main thread for a noticeable beat on large outputs.
 9. Per-layer placement. Only the overlay can be moved and scaled; the base is pinned at

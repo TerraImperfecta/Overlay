@@ -80,6 +80,7 @@
     font-family:var(--mono);letter-spacing:.12em;text-transform:uppercase;font-size:12px}
   .go:hover{filter:brightness(1.08)}
   .go:disabled{opacity:.4;cursor:not-allowed;filter:none}
+  .go.stop{background:transparent;color:var(--a);border-color:var(--a);margin-top:6px}
   .ghost{background:transparent}
   .readout{font-family:var(--mono);font-size:11px;line-height:1.85;color:var(--ink-dim)}
   .readout b{color:var(--ink);font-weight:600}
@@ -207,6 +208,7 @@
             <label class="k" for="osc">Output scale <span id="oscv" class="val"></span></label>
             <input type="range" id="osc" min="25" max="100" step="5" value="100"></div>
           <button class="go" id="render" disabled>Render</button>
+          <button class="go stop" id="cancel" hidden>Cancel</button>
           <div id="out"></div>
         </div>
       </div>
@@ -1031,6 +1033,7 @@ async function encodeWithVideoEncoder(fmt, W, H, plan, geom, quality, say, view)
     framerate: Math.max(1, Math.round(fps)), latencyMode: "quality"
   }, fmt.config || {}));
 
+  try {
   for (let i = 0; i < plan.count; i++){
     if (failure) throw failure;
     R.at(plan.times[i] + 1);
@@ -1038,11 +1041,14 @@ async function encodeWithVideoEncoder(fmt, W, H, plan, geom, quality, say, view)
       timestamp: plan.times[i] * 1000, duration: plan.delaysMs[i] * 1000 });
     enc.encode(vf, {keyFrame: i === 0 || i % 60 === 0});
     vf.close();
-    while (enc.encodeQueueSize > 6){ await idle(3); if (failure) throw failure; }
-    if (i % 8 === 0){ say(`Encoding ${i+1}/${plan.count}`); await idle(); }
+    while (enc.encodeQueueSize > 6){ await breathe(3); if (failure) throw failure; }
+    if (i % 8 === 0){ say(`Encoding ${i+1}/${plan.count}`); await breathe(); }
   }
   await enc.flush();
-  enc.close();
+  } finally {
+    /* Cancelling, or any thrown failure, used to leave the encoder open. */
+    if (enc.state !== "closed") enc.close();
+  }
   if (failure) throw failure;
   if (!chunks.length) throw new Error("The encoder produced no frames.");
 
@@ -1235,6 +1241,21 @@ function makeRenderCanvas(W, H, g, opaque, view){
 }
 
 let busy = false;      // set for the whole of a render, cleared in its finally
+let cancelling = false;
+
+/* Thrown to unwind a render the user asked to stop. Marked rather than matched
+   on its message, so it stays distinguishable from a genuine failure. */
+class Cancelled extends Error {
+  constructor(){ super("Render cancelled."); this.cancelled = true; }
+}
+
+/* Yield, then bail if the user pressed Cancel while we were away. Every encode
+   loop already paused here to keep the page responsive, which is exactly where
+   a render can be stopped without leaving half-written state behind. */
+async function breathe(ms){
+  await idle(ms);
+  if (cancelling) throw new Cancelled();
+}
 let pausedAt = 0;
 function loop(){
   requestAnimationFrame(loop);
@@ -1346,9 +1367,10 @@ const currentFormat = () => FORMATS.find(f => f.id === $("#fmt").value) || FORMA
 
 async function render(){
   if (busy || !S.plan) return;
-  busy = true;
-  const btn = $("#render"), out = $("#out");
+  busy = true; cancelling = false;
+  const btn = $("#render"), out = $("#out"), stop = $("#cancel");
   btn.disabled = true; out.innerHTML = "";
+  stop.hidden = false; stop.disabled = false; stop.textContent = "Cancel";
   const say = m => { btn.textContent = m; };
   const fmt = currentFormat();
   try {
@@ -1401,9 +1423,15 @@ async function render(){
       </div>
       <a class="dl" href="${url}" download="overlay.${fmt.ext}">Download ${fmt.ext.toUpperCase()}</a>`;
   } catch (e){
-    out.innerHTML = `<div class="readout warn">Couldn't render: ${esc(e.message || e)}</div>`;
+    /* A cancellation is something the user asked for, not a failure to report
+       as one. Anything else is. */
+    out.innerHTML = e && e.cancelled
+      ? `<div class="readout">Render cancelled.</div>`
+      : `<div class="readout warn">Couldn't render: ${esc(e.message || e)}</div>`;
   } finally {
-    busy = false; $("#render").disabled = false; $("#render").textContent = "Render";
+    busy = false; cancelling = false;
+    $("#cancel").hidden = true;
+    $("#render").disabled = false; $("#render").textContent = "Render";
     /* Cleared before the queued replan runs, so it is not deferred forever, and
        inside finally so a thrown render cannot leave the app permanently stuck. */
     if (queuedReplan){ queuedReplan = false; replan(); }
@@ -1416,9 +1444,9 @@ async function exportGIF(W,H,g,plan,say,view){
   for (let i=0;i<plan.count;i++){
     R.at(plan.times[i]+1);
     rgba.push(R.cx.getImageData(0,0,W,H).data);
-    if (i%8===0){ say(`Compositing ${i+1}/${plan.count}`); await idle(); }
+    if (i%8===0){ say(`Compositing ${i+1}/${plan.count}`); await breathe(); }
   }
-  say("Building palette"); await idle(16);
+  say("Building palette"); await breathe(16);
   const needsAlpha = S.bg === "transparent";
   const {palette, exact, lut, count} = buildPalette(rgba, true);
   const transparentIndex = count;
@@ -1444,9 +1472,9 @@ async function exportGIF(W,H,g,plan,say,view){
     } else frames.push({x:0,y:0,w:W,h:H,indices:idx,delayCs:plan.delaysCs[i],
                         disposal: needsAlpha?2:1});
     prev = idx;
-    if (i%8===0){ say(`Encoding ${i+1}/${plan.count}`); await idle(); }
+    if (i%8===0){ say(`Encoding ${i+1}/${plan.count}`); await breathe(); }
   }
-  say("Writing file"); await idle(16);
+  say("Writing file"); await breathe(16);
   return new Blob([encodeGIF(W,H,pal,count,frames,transparentIndex)], {type:"image/gif"});
 }
 
@@ -1460,9 +1488,9 @@ async function exportWebP(W,H,g,plan,say,view){
     const still = new Uint8Array(await blob.arrayBuffer());
     const {payload, hasAlpha:a} = anmfPayload(still, plan.delaysMs[i], W, H);
     parts.push(payload); hasAlpha = hasAlpha || a;
-    if (i%4===0){ say(`Encoding ${i+1}/${plan.count}`); await idle(); }
+    if (i%4===0){ say(`Encoding ${i+1}/${plan.count}`); await breathe(); }
   }
-  say("Muxing"); await idle(16);
+  say("Muxing"); await breathe(16);
   return new Blob([muxWebP(W,H,parts,hasAlpha)], {type:"image/webp"});
 }
 
@@ -1475,16 +1503,16 @@ async function exportAPNG(W,H,g,plan,say,view){
     R.cx.putImageData(d,0,0);
     const blob = await new Promise(r => R.c.toBlob(r, "image/png"));
     stills.push(new Uint8Array(await blob.arrayBuffer()));
-    if (i%4===0){ say(`Encoding ${i+1}/${plan.count}`); await idle(); }
+    if (i%4===0){ say(`Encoding ${i+1}/${plan.count}`); await breathe(); }
   }
-  say("Muxing"); await idle(16);
+  say("Muxing"); await breathe(16);
   return new Blob([muxAPNG(stills, plan.delaysMs, W, H)], {type:"image/png"});
 }
 
 async function exportCoded(fmt, W, H, g, plan, say, view){
   const {samples, description} =
     await encodeWithVideoEncoder(fmt, W, H, plan, g, S.quality, say, view);
-  say("Muxing"); await idle(16);
+  say("Muxing"); await breathe(16);
   if (fmt.kind === "ebml"){
     const codecPrivate = fmt.codecId === "V_AV1"
       ? av1ConfigRecord(description, samples[0].data) : description;
@@ -1511,9 +1539,13 @@ async function exportRecorder(fmt, W, H, g, plan, say, view){
   const total = plan.outDur * S.loops;
   R.at(1); rec.start();
   const t0 = performance.now();
+  let cancelled = false;
   await new Promise(resolve => {
     (function step(){
       const elapsed = performance.now() - t0;
+      /* Real-time capture, so this is the one path where cancelling actually
+         saves the user the wall-clock time it would have taken. */
+      if (cancelling){ cancelled = true; resolve(); return; }
       if (elapsed >= total){ resolve(); return; }
       say(`Recording ${(elapsed/1000).toFixed(1)}s / ${(total/1000).toFixed(1)}s`);
       R.at((elapsed % plan.outDur) + 1);
@@ -1521,8 +1553,11 @@ async function exportRecorder(fmt, W, H, g, plan, say, view){
     })();
   });
   await idle(120);
-  rec.stop(); await stopped;
+  /* Stopped and torn down before unwinding, so a cancelled recording does not
+     leave the capture stream running. */
+  try { rec.stop(); await stopped; } catch {}
   stream.getTracks().forEach(t => t.stop());
+  if (cancelled) throw new Cancelled();
   if (!chunks.length) throw new Error("The recorder produced no data.");
   return new Blob(chunks, {type: fmt.mime});
 }
@@ -1631,6 +1666,12 @@ seg("#bgT","#bgC","transparent","solid", v => S.bg = v);
 bind("#swap","click", () => { S.src.reverse(); renderSlot(0); renderSlot(1); replan(); });
 bind("#center","click", () => { S.ox = .5; S.oy = .5; replan(); });
 bind("#render","click", render);
+bind("#cancel","click", () => {
+  if (!busy) return;
+  cancelling = true;
+  const stop = $("#cancel");
+  stop.disabled = true; stop.textContent = "Stopping…";
+});
 bind("#play","click", e => {
   if (S.playing) pausedAt = (performance.now()-S.t0) % (S.plan ? S.plan.outDur : 1000);
   else S.t0 = performance.now() - pausedAt;
