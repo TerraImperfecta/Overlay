@@ -6,6 +6,11 @@ Notable changes to Overlay. Format follows [Keep a Changelog](https://keepachang
 
 ### Added
 
+- `corpus/`: eight generated GIFs covering the decoder cases in `PLAN.md` section 6 —
+  interlace, disposal 2 and 3, local colour tables, sub-rectangle frames, the sub-20ms delay
+  clamp, a still, and a first frame smaller than the canvas. Built by `corpus/make_corpus.py`
+  with no imaging library, and verified against both the repository's decoder and the
+  browser's own.
 - Published at <https://overlay.immanuelqrw.dev> via GitHub Pages.
 - `README.md`, `LICENSE` (GPL-3.0), `CHANGELOG.md`.
 
