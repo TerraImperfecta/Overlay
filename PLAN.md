@@ -1,8 +1,16 @@
 # Overlay — handoff
 
 Single-file browser tool that merges two animations into one file on a shared timeline.
-Everything is in `index.html`. No build step, no dependencies, no network calls. It must
-keep working when opened directly from `file://`.
+Everything is in `index.html`. The **deployed output is a static site** — no server-side code,
+nothing to run but files — served over http(s) at <https://overlay.immanuelqrw.dev>.
+
+A build step and dependencies are permitted. They were not, originally, and several decisions
+below were made under that older rule; where one of them rested on it, it is now marked and
+reopened rather than quietly kept. `file://` is no longer supported: it was a consequence of the
+single-file rule, not a goal in itself, and preserving it distorted the code.
+
+What has *not* changed: no user data leaves the browser. There are no network calls in the
+tool's own operation, and there is nothing to upload to.
 
 ---
 
@@ -176,8 +184,8 @@ will point at the box far faster than reading the spec again.
    `composite()` and the drag handler.
 10. Optional Floyd–Steinberg dithering for the GIF path, off by default. Sources are usually
     already quantised, so it mostly inflates file size — hence not built.
-11. Persist settings to `localStorage`. Note this must degrade silently on `file://` in some
-    browsers.
+11. Persist settings to `localStorage`. Reads and writes still need `try`/`catch` — private
+    browsing and blocked site data can throw — but the `file://` hazard is gone.
 
 ---
 
@@ -232,9 +240,13 @@ ISOBMFF *video track* whose frames are inter-coded samples, while a still AVIF s
 picture as an image *item* under `iloc`/`iprp`. Different storage models; no concatenation
 path exists. Hence the `VideoEncoder` route.
 
-**A WebAssembly encoder (libavif, libwebp).** Would break the single-file, no-network,
-works-on-`file://` property. Inlining a multi-megabyte wasm blob as base64 was considered and
-rejected.
+**A WebAssembly encoder (libavif, libwebp).** ~~Would break the single-file, no-network,
+works-on-`file://` property.~~ **This ruling is void and the question is open again — see
+issue #34.** It rested entirely on a constraint that no longer applies, and it lands on the code
+section 4 ranks as least trustworthy: if libavif-wasm is adopted, the animated AVIF muxer is
+deleted rather than debugged. Do not verify that muxer until #34 is settled. Whatever the
+answer, this entry must be rewritten to state the real reason — a dead justification in a list
+whose whole purpose is "do not re-litigate these" is worse than no entry at all.
 
 **Alpha in any AV1-based output.** `VideoFrame` from a canvas is YUV. AVIF alpha requires a
 separate auxiliary track. WebP and APNG cover the transparency case.

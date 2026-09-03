@@ -1,5 +1,5 @@
-# The tool is one file with no build step, so there is nothing to ignore
-# from a toolchain. These are local scratch and editor droppings only.
+# The tool itself is one file and ships as-is; everything ignored here belongs
+# to the test tooling, or is local scratch and editor droppings.
 
 # Encoder output dumped for external validation with ffprobe / avifdec /
 # webpinfo / pngcheck. The test corpus itself under corpus/ IS committed —
@@ -15,3 +15,8 @@ out/
 # Personal, machine-specific Claude Code settings (pins gh to the immanuelqrw
 # account for this repo). Never committed -- the path is local to one machine.
 .claude/settings.local.json
+
+# Test tooling
+node_modules/
+playwright-report/
+test-results/
