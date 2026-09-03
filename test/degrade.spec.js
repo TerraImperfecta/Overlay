@@ -247,12 +247,14 @@ test("an animated non-GIF input degrades to a still without ImageDecoder",
       const W = Math.max(2, Math.round(g.w * S.outScale) & ~1);
       const H = Math.max(2, Math.round(g.h * S.outScale) & ~1);
       const apng = await exportAPNG(W, H, g, plan, () => {});
-      const back = await loadSource(new File([apng], "round-trip.png", { type: "image/png" }),
-                                   () => {});
-      const out = { hasDecoder, expected: plan.count, kind: back.kind,
-                    frames: back.frames.length, static: back.static, meta: back.meta };
-      for (const f of back.frames) f.bitmap.close();
-      return out;
+      // Through accept(), not loadSource directly: accept() rewrites src.meta,
+      // so testing the inner call would have missed the note being clobbered.
+      await accept(1, new File([apng], "round-trip.png", { type: "image/png" }));
+      const back = S.src[1];
+      const slot = document.querySelector('.slot[data-i="1"] .meta');
+      return { hasDecoder, expected: plan.count, kind: back.kind,
+               frames: back.frames.length, static: back.static,
+               meta: back.meta, slotText: slot ? slot.textContent : "" };
     });
 
     console.log(`[${testInfo.project.name}] APNG round-trip: ` +
@@ -262,7 +264,7 @@ test("an animated non-GIF input degrades to a still without ImageDecoder",
     if (result.hasDecoder) {
       expect(result.frames).toBe(result.expected);
       expect(result.static).toBe(false);
-      expect(result.meta).toBe("");
+      expect(result.meta).not.toContain("ImageDecoder");
     } else {
       // The documented consequence, asserted so it cannot change silently.
       expect(result.frames).toBe(1);
@@ -271,5 +273,7 @@ test("an animated non-GIF input degrades to a still without ImageDecoder",
       // And the slot has to say why, or the user just sees an animation that
       // arrived as a single frame for no stated reason.
       expect(result.meta).toContain("no ImageDecoder");
+      // And it has to survive as far as the slot the user actually reads.
+      expect(result.slotText).toContain("no ImageDecoder");
     }
   });

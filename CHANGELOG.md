@@ -40,6 +40,11 @@ Notable changes to Overlay. Format follows [Keep a Changelog](https://keepachang
   `ImageDecoder`, so an animated WebP, APNG or AVIF arrives as its first frame; it used to do
   that silently.
 
+- A render now draws from a snapshot of the state taken when it started, so nothing changed
+  while it runs can land partway through the output. `replan()` defers until the render
+  finishes; loading a source is refused while one is running, since disposing the previous
+  source closes bitmaps the encoder is still drawing from.
+
 ### Changed
 
 - `PLAN.md` section 4 records that all four of its suspects were put in front of third-party
