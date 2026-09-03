@@ -23,6 +23,10 @@ Notable changes to Overlay. Format follows [Keep a Changelog](https://keepachang
 
 ### Changed
 
+- `PLAN.md` section 7's WebAssembly ruling is settled again, on measurement rather than on the
+  old dependency rule: nothing published encodes animated AVIF, and the one published animated
+  encoder (`webpxmux`, 479 KB brotli) costs ~21× the compressed page to replace the muxer we
+  doubt least. The hand-written muxers stay. #20 and #21 are unblocked.
 - **The no-build-step, no-dependencies rule is lifted.** The deployed output must still be a
   static site, but a build step and dependencies are now permitted, and `file://` is no longer
   supported. `PLAN.md` section 7's rejection of a WebAssembly encoder rested entirely on that

@@ -141,7 +141,11 @@ real decoder. Rank your suspicion in this order:
 1. **Animated AVIF** (`buildMetaBox`, `muxISOBMFF` with `avif: true`). Most structurally
    complex, least forgiving. `iloc` offsets, `ipma` property associations and the `avis` brand
    list are the likely failure points. The `meta` box carries a primary still item whose
-   `iloc` extent points at the same bytes as sample zero in `mdat`.
+   `iloc` extent points at the same bytes as sample zero in `mdat`. When hunting a wrong offset
+   here, `@browser-mc/webcodecs-avif` (30 KB, WebCodecs rather than wasm) exports `muxStillAvif`
+   and builds these same still-item boxes; diffing against a working implementation beats
+   rereading the specification. It cannot replace our animated path — see section 7 — but it is
+   a useful oracle for this box.
 2. **`av1ConfigRecord` sequence-header parsing.** Only exercised when Chrome's AV1 encoder
    omits `decoderConfig.description`. The `timing_info` and `decoder_model_info` branches are
    the fiddly part. If `description` is present this code never runs, so the bug can hide.
@@ -240,13 +244,32 @@ ISOBMFF *video track* whose frames are inter-coded samples, while a still AVIF s
 picture as an image *item* under `iloc`/`iprp`. Different storage models; no concatenation
 path exists. Hence the `VideoEncoder` route.
 
-**A WebAssembly encoder (libavif, libwebp).** ~~Would break the single-file, no-network,
-works-on-`file://` property.~~ **This ruling is void and the question is open again — see
-issue #34.** It rested entirely on a constraint that no longer applies, and it lands on the code
-section 4 ranks as least trustworthy: if libavif-wasm is adopted, the animated AVIF muxer is
-deleted rather than debugged. Do not verify that muxer until #34 is settled. Whatever the
-answer, this entry must be rewritten to state the real reason — a dead justification in a list
-whose whole purpose is "do not re-litigate these" is worse than no entry at all.
+**A WebAssembly encoder (libavif, libwebp).** Rejected on measurement, not on a dependency
+rule — that rule is gone and does not belong in this argument. Investigated in #34; the numbers
+are here so nobody has to run it again.
+
+*Nothing published encodes animated AVIF.* `@jsquash/avif` exports `encode` and `decode` for a
+single image and nothing else — grep its package for `anim`, `addImage`, `sequence` or
+`frameCount` and you get no hits. Every other AVIF package on npm is the same, including
+`@browser-mc/webcodecs-avif`, whose entry point is literally `muxStillAvif`. A still-image
+encoder does not help, for the reason in the entry directly above: still AVIF and animated AVIF
+are different storage models with no concatenation path, and that is just as true of someone
+else's stills as of ours. So the code section 4 ranks *least* trustworthy has no off-the-shelf
+replacement at any price.
+
+*The one animated encoder that does exist replaces the muxer we doubt least.* `webpxmux`
+(`encodeFrames`, with a per-frame `duration`, so timing would survive) writes animated WebP and
+costs **479 KB brotli**. `index.html` is **22 KB gzipped** in total — the whole application.
+That is roughly **21× the compressed page** to replace the `ANMF` path, which section 4 does
+not even list among its suspects.
+
+MP4, WebM and APNG stay ours under any of these options. This was never going to be a clean
+sweep.
+
+Reconsider only if #20 concludes the hand-written AVIF muxer cannot be fixed. The route then is
+a custom Emscripten build of libavif with image-sequence support — `avifEncoderAddImage` does
+take per-frame durations — which means owning a toolchain and a multi-megabyte aom payload,
+because nobody has published such a build.
 
 **Alpha in any AV1-based output.** `VideoFrame` from a canvas is YUV. AVIF alpha requires a
 separate auxiliary track. WebP and APNG cover the transparency case.
