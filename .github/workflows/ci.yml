@@ -24,11 +24,11 @@ jobs:
 
       - run: npm ci
 
-      # Only Chromium: these tests assert exact decoder output, and Chromium is
-      # where ImageDecoder and WebCodecs are complete enough to be an oracle.
-      # Firefox and Safari matter for capability *degradation*, which is a
-      # different shape of test -- see issue #19.
-      - run: npx playwright install --with-deps chromium
+      # Chromium runs everything: it is where ImageDecoder and WebCodecs are
+      # complete enough to be an oracle for exact decoder output. Firefox and
+      # WebKit run degrade.spec.js only, which asks the weaker and browser-
+      # appropriate question -- does the format list shrink honestly (#19).
+      - run: npx playwright install --with-deps chromium firefox webkit
 
       - run: npm test
 

@@ -245,7 +245,7 @@ test("an animated non-GIF input degrades to a still without ImageDecoder",
       const back = await loadSource(new File([apng], "round-trip.png", { type: "image/png" }),
                                    () => {});
       const out = { hasDecoder, expected: plan.count, kind: back.kind,
-                    frames: back.frames.length, static: back.static };
+                    frames: back.frames.length, static: back.static, meta: back.meta };
       for (const f of back.frames) f.bitmap.close();
       return out;
     });
@@ -257,10 +257,14 @@ test("an animated non-GIF input degrades to a still without ImageDecoder",
     if (result.hasDecoder) {
       expect(result.frames).toBe(result.expected);
       expect(result.static).toBe(false);
+      expect(result.meta).toBe("");
     } else {
       // The documented consequence, asserted so it cannot change silently.
       expect(result.frames).toBe(1);
       expect(result.kind).toBe("still");
       expect(result.static).toBe(true);
+      // And the slot has to say why, or the user just sees an animation that
+      // arrived as a single frame for no stated reason.
+      expect(result.meta).toContain("no ImageDecoder");
     }
   });

@@ -34,6 +34,12 @@ Notable changes to Overlay. Format follows [Keep a Changelog](https://keepachang
   would surface the moment anyone parsed further. The parser is split out as
   `parseSequenceHeader` so it can be tested against hand-built headers.
 
+- Cross-browser CI: `degrade.spec.js` runs on Chromium, Firefox and WebKit, checking that the
+  format list shrinks honestly rather than offering something that throws on use.
+- A source that had to fall back to a single frame now says so in its slot. WebKit has no
+  `ImageDecoder`, so an animated WebP, APNG or AVIF arrives as its first frame; it used to do
+  that silently.
+
 ### Changed
 
 - `PLAN.md` section 4 records that all four of its suspects were put in front of third-party

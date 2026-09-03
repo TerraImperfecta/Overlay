@@ -362,6 +362,7 @@ async function loadSource(file, onProgress){
   const isVideo = type.startsWith("video/") || ["mp4","webm","mov","m4v","ogv","mkv"].includes(ext);
   let frames, width, height, kind;
 
+  let note = "";
   if (isVideo){
     ({frames, width, height} = await decodeVideo(file, onProgress)); kind = "video";
   } else if (type === "image/gif" || ext === "gif"){
@@ -376,7 +377,7 @@ async function loadSource(file, onProgress){
     }
     kind = "gif";
   } else {
-    ({frames, width, height, kind} = await decodeImage(file, type, ext, onProgress));
+    ({frames, width, height, kind, note = ""} = await decodeImage(file, type, ext, onProgress));
   }
   if (!frames.length) throw new Error("Nothing decodable in that file.");
 
@@ -384,7 +385,7 @@ async function loadSource(file, onProgress){
   for (const f of frames){ starts.push(t); t += f.delay; }
   const isStatic = frames.length === 1;
   return { name, kind, width, height, frames, starts,
-           duration: isStatic ? 0 : (t || 100), static: isStatic, thumb:null, meta:"" };
+           duration: isStatic ? 0 : (t || 100), static: isStatic, thumb:null, meta: note };
 }
 
 async function decodeImage(file, type, ext, onProgress){
@@ -415,8 +416,16 @@ async function decodeImage(file, type, ext, onProgress){
       } catch { try { dec.close(); } catch {} }
     }
   }
+  /* No ImageDecoder, or it refused the type. createImageBitmap gives back a
+     single frame, so an animated WebP, APNG or AVIF silently arrives as its
+     first frame -- see #19, which is WebKit today. Say so in the slot rather
+     than leaving the user to conclude the tool is broken. */
   const bitmap = await createImageBitmap(file);
-  return { frames:[{bitmap, delay:100}], width:bitmap.width, height:bitmap.height, kind:"still" };
+  const animatable = ["webp","avif","png","apng"].includes(ext) ||
+                     /^image\/(webp|avif|png|apng)$/.test(guess);
+  return { frames:[{bitmap, delay:100}], width:bitmap.width, height:bitmap.height, kind:"still",
+           note: (animatable && typeof ImageDecoder === "undefined")
+                 ? "still — no ImageDecoder in this browser" : "" };
 }
 
 async function decodeVideo(file, onProgress){
