@@ -1,0 +1,15 @@
+# The tool is one file with no build step, so there is nothing to ignore
+# from a toolchain. These are local scratch and editor droppings only.
+
+# Sample and output files used while testing the muxers
+corpus/
+out/
+*.avif
+*.mp4
+*.webm
+
+# JetBrains IDE config
+.idea/
+
+# macOS
+.DS_Store

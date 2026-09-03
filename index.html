@@ -1,0 +1,1574 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Overlay — merge two animations onto one timeline</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3CclipPath id='a'%3E%3Ccircle cx='25' cy='32' r='15'/%3E%3C/clipPath%3E%3C/defs%3E%3Crect width='64' height='64' rx='14' fill='%23151827'/%3E%3Ccircle cx='25' cy='32' r='15' fill='%23FF3366'/%3E%3Ccircle cx='39' cy='32' r='15' fill='%2333CCCC'/%3E%3Cg clip-path='url(%23a)'%3E%3Ccircle cx='39' cy='32' r='15' fill='%23FFCC00'/%3E%3C/g%3E%3C/svg%3E">
+<meta name="theme-color" content="#151827">
+<style>
+  :root{
+    --ground:#151827; --panel:#1D2135; --panel-2:#252A42; --rule:#343A5C;
+    --ink:#EDEEF5; --ink-dim:#8D93B5;
+    --a:#FF3366; --b:#33CCCC; --c:#FFCC00;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    --ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{background:var(--ground);color:var(--ink);font-family:var(--ui);font-size:14px;
+       line-height:1.5;padding:20px;min-height:100vh}
+  .wrap{max-width:1180px;margin:0 auto}
+  header{display:flex;align-items:center;gap:11px;flex-wrap:wrap;margin-bottom:2px}
+  header svg{display:block;border-radius:6px}
+  h1{font-family:var(--mono);font-size:15px;letter-spacing:.22em;text-transform:uppercase;
+     font-weight:600;margin:0}
+  .tag{font-family:var(--mono);font-size:11px;color:var(--ink-dim);letter-spacing:.06em}
+  .lede{color:var(--ink-dim);max-width:64ch;margin:8px 0 20px;font-size:13px}
+  .grid{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:16px;align-items:start}
+  @media(max-width:860px){.grid{grid-template-columns:minmax(0,1fr)}}
+  .panel{background:var(--panel);border:1px solid var(--rule);border-radius:3px}
+  .panel h2{font-family:var(--mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase;
+     color:var(--ink-dim);margin:0;padding:9px 12px;border-bottom:1px solid var(--rule);font-weight:600}
+  .pad{padding:12px}
+  .slots{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .slot{border:1px dashed var(--rule);border-radius:3px;background:var(--panel-2);padding:10px;
+        cursor:pointer;min-height:120px;display:flex;flex-direction:column;gap:7px;
+        transition:border-color .12s,background .12s}
+  .slot:hover,.slot.hot{border-color:var(--c);background:#2A3050}
+  .slot .lbl{font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase}
+  .slot[data-i="0"] .lbl{color:var(--a)}
+  .slot[data-i="1"] .lbl{color:var(--b)}
+  .slot .hint{color:var(--ink-dim);font-size:12px;margin:auto 0}
+  .slot .meta{font-family:var(--mono);font-size:11px;color:var(--ink-dim);margin-top:auto}
+  .slot .name{font-size:12px;word-break:break-all;color:var(--ink);line-height:1.3}
+  .slot .thumb{width:100%;height:56px;object-fit:contain;border-radius:2px;background:
+    conic-gradient(#20243a 0 25%,#191d30 0 50%,#20243a 0 75%,#191d30 0) 0/12px 12px}
+  input[type=file]{display:none}
+  .stage{display:flex;align-items:center;justify-content:center;padding:16px;min-height:260px;
+    background:conic-gradient(#20243a 0 25%,#191d30 0 50%,#20243a 0 75%,#191d30 0) 0/16px 16px;
+    border-bottom:1px solid var(--rule)}
+  #stage{max-width:100%;image-rendering:pixelated;cursor:grab;border-radius:2px;
+    box-shadow:0 0 0 1px rgba(255,255,255,.07)}
+  #stage.drag{cursor:grabbing}
+  .stagebar{display:flex;gap:10px;align-items:center;padding:8px 12px;flex-wrap:wrap;
+    font-family:var(--mono);font-size:11px;color:var(--ink-dim)}
+  .stagebar .sep{flex:1}
+  #timeline{width:100%;height:118px;display:block}
+  .legend{display:flex;gap:16px;padding:0 12px 10px;font-family:var(--mono);font-size:10px;
+    letter-spacing:.1em;text-transform:uppercase;color:var(--ink-dim);flex-wrap:wrap}
+  .legend i{width:9px;height:9px;display:inline-block;margin-right:6px;border-radius:1px}
+  .ctl{margin-bottom:14px}
+  .ctl:last-child{margin-bottom:0}
+  .ctl[hidden]{display:none}
+  label.k{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--ink-dim);margin-bottom:5px}
+  select,button,input[type=number]{font-family:var(--ui);font-size:13px;color:var(--ink);
+    background:var(--panel-2);border:1px solid var(--rule);border-radius:2px;padding:7px 8px;width:100%}
+  select:focus-visible,button:focus-visible,input:focus-visible,.slot:focus-visible{
+    outline:2px solid var(--c);outline-offset:1px}
+  input[type=range]{width:100%;accent-color:var(--c);background:transparent}
+  input[type=color]{width:100%;height:32px;padding:2px;background:var(--panel-2);
+    border:1px solid var(--rule);border-radius:2px}
+  .val{font-family:var(--mono);font-size:11px;color:var(--ink);float:right}
+  .seg{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .seg button{padding:6px}
+  .seg button[aria-pressed=true]{background:var(--c);color:#151827;border-color:var(--c);font-weight:600}
+  button{cursor:pointer}
+  button:hover{border-color:var(--ink-dim)}
+  .go{background:var(--c);color:#151827;border-color:var(--c);font-weight:600;padding:11px;
+    font-family:var(--mono);letter-spacing:.12em;text-transform:uppercase;font-size:12px}
+  .go:hover{filter:brightness(1.08)}
+  .go:disabled{opacity:.4;cursor:not-allowed;filter:none}
+  .ghost{background:transparent}
+  .readout{font-family:var(--mono);font-size:11px;line-height:1.85;color:var(--ink-dim)}
+  .readout b{color:var(--ink);font-weight:600}
+  .warn{color:var(--a)} .ok{color:var(--b)}
+  .note{font-size:12px;color:var(--ink-dim);margin-top:6px}
+  #out{margin-top:12px}
+  #out .prev{width:100%;border-radius:2px;display:block;background:
+    conic-gradient(#20243a 0 25%,#191d30 0 50%,#20243a 0 75%,#191d30 0) 0/12px 12px}
+  #out a.dl{display:block;text-align:center;margin-top:8px;text-decoration:none;
+    font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;
+    padding:10px;border:1px solid var(--b);color:var(--b);border-radius:2px}
+  #out a.dl:hover{background:var(--b);color:#151827}
+  @media (prefers-reduced-motion: reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <svg width="26" height="26" viewBox="0 0 64 64" aria-hidden="true">
+      <defs><clipPath id="lens"><circle cx="25" cy="32" r="15"/></clipPath></defs>
+      <rect width="64" height="64" rx="14" fill="#252A42"/>
+      <circle cx="25" cy="32" r="15" fill="#FF3366"/>
+      <circle cx="39" cy="32" r="15" fill="#33CCCC"/>
+      <g clip-path="url(#lens)"><circle cx="39" cy="32" r="15" fill="#FFCC00"/></g>
+    </svg>
+    <h1>Overlay</h1>
+    <span class="tag">two animations → one timeline → one file</span>
+  </header>
+  <p class="lede">Stacking two animations in a page always drifts apart, because each keeps its own clock.
+  This decodes both, merges their frame boundaries into a single timeline, and re-encodes one file —
+  so they can't drift, ever.</p>
+
+  <div class="slots" style="margin-bottom:16px">
+    <div class="slot" data-i="0" tabindex="0" role="button" aria-label="Choose base animation"></div>
+    <div class="slot" data-i="1" tabindex="0" role="button" aria-label="Choose overlay animation"></div>
+  </div>
+  <input type="file" id="file0" accept="image/*,video/*">
+  <input type="file" id="file1" accept="image/*,video/*">
+
+  <div class="grid">
+    <div>
+      <div class="panel" style="margin-bottom:16px">
+        <h2>Preview</h2>
+        <div class="stage"><canvas id="stage" width="320" height="240"></canvas></div>
+        <div class="stagebar">
+          <button id="play" class="ghost" style="width:auto;padding:5px 12px">Pause</button>
+          <span id="pos">0.00s</span><span class="sep"></span><span id="dims">—</span>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Merged timeline</h2>
+        <canvas id="timeline"></canvas>
+        <div class="legend">
+          <span><i style="background:var(--a)"></i>Base frames</span>
+          <span><i style="background:var(--c)"></i>Output frames</span>
+          <span><i style="background:var(--b)"></i>Overlay frames</span>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="panel" style="margin-bottom:16px">
+        <h2>Sync</h2>
+        <div class="pad">
+          <div class="ctl">
+            <label class="k" for="sync">How to reconcile lengths</label>
+            <select id="sync">
+              <option value="auto">Auto — pick the cleanest</option>
+              <option value="lcm">Loop both until they realign</option>
+              <option value="stretch">Retime overlay to match base</option>
+              <option value="shortest">Trim to the shorter one</option>
+              <option value="longest">Run to the longer one</option>
+            </select>
+            <p class="note" id="syncNote"></p>
+          </div>
+          <div class="ctl">
+            <label class="k" for="maxf">Frame budget <span id="maxfv" class="val"></span></label>
+            <input type="range" id="maxf" min="24" max="400" step="8" value="180">
+          </div>
+          <div class="readout" id="readout"></div>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-bottom:16px">
+        <h2>Composite</h2>
+        <div class="pad">
+          <div class="ctl"><label class="k" for="blend">Blend mode</label>
+            <select id="blend">
+              <option value="source-over">Normal</option><option value="multiply">Multiply</option>
+              <option value="screen">Screen</option><option value="overlay">Overlay</option>
+              <option value="difference">Difference</option><option value="lighten">Lighten</option>
+              <option value="darken">Darken</option><option value="hard-light">Hard light</option>
+              <option value="color-dodge">Color dodge</option><option value="exclusion">Exclusion</option>
+            </select></div>
+          <div class="ctl"><label class="k" for="op">Overlay opacity <span id="opv" class="val"></span></label>
+            <input type="range" id="op" min="0" max="100" value="100"></div>
+          <div class="ctl"><label class="k" for="sc">Overlay size <span id="scv" class="val"></span></label>
+            <input type="range" id="sc" min="10" max="300" value="100"></div>
+          <div class="ctl"><label class="k">Canvas</label>
+            <div class="seg"><button id="cvBase" aria-pressed="true">Base size</button>
+            <button id="cvFit" aria-pressed="false">Fit both</button></div></div>
+          <div class="ctl"><label class="k">Background</label>
+            <div class="seg"><button id="bgT" aria-pressed="true">Transparent</button>
+            <button id="bgC" aria-pressed="false">Solid</button></div>
+            <div style="margin-top:6px"><input type="color" id="bgColor" value="#000000"></div></div>
+          <div class="ctl"><button class="ghost" id="swap">Swap base and overlay</button></div>
+          <div class="ctl"><button class="ghost" id="center">Recenter overlay</button></div>
+          <p class="note">Drag on the preview to move the overlay.</p>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Export</h2>
+        <div class="pad">
+          <div class="ctl"><label class="k" for="fmt">Format</label>
+            <select id="fmt"></select>
+            <p class="note" id="fmtNote"></p></div>
+          <div class="ctl" id="qualityCtl" hidden>
+            <label class="k" for="q">Quality <span id="qv" class="val"></span></label>
+            <input type="range" id="q" min="30" max="100" value="82"></div>
+          <div class="ctl" id="loopsCtl" hidden>
+            <label class="k" for="loops">Loops to record</label>
+            <input type="number" id="loops" min="1" max="20" value="3"></div>
+          <div class="ctl">
+            <label class="k" for="osc">Output scale <span id="oscv" class="val"></span></label>
+            <input type="range" id="osc" min="25" max="100" step="5" value="100"></div>
+          <button class="go" id="render" disabled>Render</button>
+          <div id="out"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* =====================================================================
+   0. ICON — rasterised at runtime so it works on file:// and hosted
+   ===================================================================== */
+(function(){
+  const svg = document.querySelector("header svg").outerHTML;
+  const img = new Image();
+  img.onload = () => {
+    const c = document.createElement("canvas"); c.width = c.height = 180;
+    const x = c.getContext("2d");
+    x.fillStyle = "#151827"; x.fillRect(0,0,180,180);
+    x.drawImage(img, 10, 10, 160, 160);
+    const link = document.createElement("link");
+    link.rel = "apple-touch-icon"; link.href = c.toDataURL("image/png");
+    document.head.appendChild(link);
+  };
+  img.onerror = () => {};
+  img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+})();
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const idle = ms => new Promise(r => setTimeout(r, ms || 0));
+
+/* =====================================================================
+   1. GIF DECODER
+   ===================================================================== */
+function skipBlocks(d,p){ while(d[p]!==0){ p += 1 + d[p]; } return p+1; }
+
+function lzwDecode(minCodeSize, data, pixelCount){
+  const MAX = 4096, clear = 1 << minCodeSize, eoi = clear + 1;
+  const out = new Uint8Array(pixelCount);
+  const prefix = new Int32Array(MAX), suffix = new Uint8Array(MAX), stack = new Uint8Array(MAX+1);
+  for (let i=0;i<clear;i++){ prefix[i]=0; suffix[i]=i; }
+  let codeSize = minCodeSize+1, codeMask = (1<<codeSize)-1;
+  let available = clear+2, old = -1, first = 0, datum = 0, bits = 0, top = 0, bi = 0, i = 0;
+  while (i < pixelCount){
+    if (top === 0){
+      if (bits < codeSize){ if (bi >= data.length) break; datum |= data[bi++] << bits; bits += 8; continue; }
+      let code = datum & codeMask; datum >>= codeSize; bits -= codeSize;
+      if (code === eoi) break;
+      if (code === clear){ codeSize = minCodeSize+1; codeMask = (1<<codeSize)-1;
+                           available = clear+2; old = -1; continue; }
+      if (old === -1){ stack[top++] = suffix[code]; old = code; first = code; continue; }
+      const inCode = code;
+      if (code >= available){ stack[top++] = first; code = old; }
+      while (code >= clear){ stack[top++] = suffix[code]; code = prefix[code]; }
+      first = suffix[code]; stack[top++] = first;
+      if (available < MAX){ prefix[available] = old; suffix[available] = first; available++;
+        if ((available & codeMask) === 0 && available < MAX){ codeSize++; codeMask += available; } }
+      old = inCode;
+    }
+    out[i++] = stack[--top];
+  }
+  return out;
+}
+
+function deinterlace(px,w,h){
+  const src = px.slice(), off=[0,4,2,1], jump=[8,8,4,2]; let row=0;
+  for (let pass=0; pass<4; pass++)
+    for (let y=off[pass]; y<h; y+=jump[pass]){ px.set(src.subarray(row*w,row*w+w), y*w); row++; }
+}
+
+function parseGIF(buffer){
+  const d = new Uint8Array(buffer);
+  if (String.fromCharCode(d[0],d[1],d[2]) !== "GIF") throw new Error("Not a GIF.");
+  let p = 6;
+  const width = d[p]|d[p+1]<<8; p+=2;
+  const height = d[p]|d[p+1]<<8; p+=2;
+  const flags = d[p++]; p+=2;
+  let gct = null;
+  if (flags & 0x80){ const n = 2 << (flags & 7); gct = d.subarray(p, p+n*3); p += n*3; }
+  const frames = []; let gce = null;
+  while (p < d.length){
+    const b = d[p++];
+    if (b === 0x3B) break;
+    if (b === 0x21){
+      const label = d[p++];
+      if (label === 0xF9){
+        const size = d[p], packed = d[p+1];
+        gce = { disposal:(packed>>2)&7, transparent:(packed&1)?d[p+4]:-1, delay:d[p+2]|d[p+3]<<8 };
+        p = skipBlocks(d, p+1+size);
+      } else p = skipBlocks(d, p);
+    } else if (b === 0x2C){
+      const x=d[p]|d[p+1]<<8, y=d[p+2]|d[p+3]<<8, w=d[p+4]|d[p+5]<<8, h=d[p+6]|d[p+7]<<8;
+      const f = d[p+8]; p += 9;
+      let lct = null;
+      if (f & 0x80){ const n = 2 << (f&7); lct = d.subarray(p, p+n*3); p += n*3; }
+      const minCode = d[p++];
+      let q = p, total = 0;
+      while (d[q] !== 0){ total += d[q]; q += 1 + d[q]; }
+      const data = new Uint8Array(total); let o = 0; q = p;
+      while (d[q] !== 0){ const n = d[q]; data.set(d.subarray(q+1,q+1+n), o); o += n; q += 1+n; }
+      p = q + 1;
+      const indices = lzwDecode(minCode, data, w*h);
+      if (f & 0x40) deinterlace(indices, w, h);
+      const g = gce || {disposal:0, transparent:-1, delay:0};
+      frames.push({x,y,w,h,indices,palette:lct||gct,disposal:g.disposal,
+                   transparent:g.transparent, delay:g.delay});
+      gce = null;
+    } else break;
+  }
+  if (!frames.length) throw new Error("No frames in that GIF.");
+  return {width, height, frames};
+}
+
+const realDelay = cs => { const ms = cs*10; return ms < 20 ? 100 : ms; };
+
+function flattenGIF(gif){
+  const W = gif.width, H = gif.height;
+  const cur = new Uint8ClampedArray(W*H*4);
+  const out = []; let saved = null;
+  for (const f of gif.frames){
+    if (f.disposal === 3) saved = cur.slice();
+    const pal = f.palette;
+    if (pal) for (let yy=0; yy<f.h; yy++){
+      const gy = f.y+yy; if (gy<0||gy>=H) continue;
+      for (let xx=0; xx<f.w; xx++){
+        const gx = f.x+xx; if (gx<0||gx>=W) continue;
+        const idx = f.indices[yy*f.w+xx]; if (idx === f.transparent) continue;
+        const o = (gy*W+gx)*4, q = idx*3;
+        cur[o]=pal[q]; cur[o+1]=pal[q+1]; cur[o+2]=pal[q+2]; cur[o+3]=255;
+      }
+    }
+    out.push({ data:new Uint8ClampedArray(cur), delay:realDelay(f.delay) });
+    if (f.disposal === 2){
+      for (let yy=0; yy<f.h; yy++){ const gy=f.y+yy; if(gy<0||gy>=H)continue;
+        for (let xx=0; xx<f.w; xx++){ const gx=f.x+xx; if(gx<0||gx>=W)continue;
+          const o=(gy*W+gx)*4; cur[o]=cur[o+1]=cur[o+2]=cur[o+3]=0; } }
+    } else if (f.disposal === 3 && saved) cur.set(saved);
+  }
+  return out;
+}
+
+/* =====================================================================
+   2. UNIVERSAL SOURCE LOADER
+   ===================================================================== */
+const VIDEO_FPS = 20, VIDEO_MAX_FRAMES = 200, VIDEO_MAX_EDGE = 640;
+
+async function loadSource(file, onProgress){
+  const name = file.name || "clip";
+  const type = (file.type || "").toLowerCase();
+  const ext = name.split(".").pop().toLowerCase();
+  const isVideo = type.startsWith("video/") || ["mp4","webm","mov","m4v","ogv","mkv"].includes(ext);
+  let frames, width, height, kind;
+
+  if (isVideo){
+    ({frames, width, height} = await decodeVideo(file, onProgress)); kind = "video";
+  } else if (type === "image/gif" || ext === "gif"){
+    const gif = parseGIF(await file.arrayBuffer());
+    width = gif.width; height = gif.height;
+    const flat = flattenGIF(gif);
+    frames = [];
+    for (let i = 0; i < flat.length; i++){
+      frames.push({ bitmap: await createImageBitmap(new ImageData(flat[i].data, width, height)),
+                    delay: flat[i].delay });
+      if (onProgress && i % 8 === 0) onProgress(`Decoding ${i+1}/${flat.length}`);
+    }
+    kind = "gif";
+  } else {
+    ({frames, width, height, kind} = await decodeImage(file, type, ext, onProgress));
+  }
+  if (!frames.length) throw new Error("Nothing decodable in that file.");
+
+  const starts = []; let t = 0;
+  for (const f of frames){ starts.push(t); t += f.delay; }
+  const isStatic = frames.length === 1;
+  return { name, kind, width, height, frames, starts,
+           duration: isStatic ? 0 : (t || 100), static: isStatic, thumb:null, meta:"" };
+}
+
+async function decodeImage(file, type, ext, onProgress){
+  const guess = type || ({webp:"image/webp", avif:"image/avif", png:"image/png",
+                          jpg:"image/jpeg", jpeg:"image/jpeg", jxl:"image/jxl"}[ext] || "");
+  if (typeof ImageDecoder !== "undefined" && guess){
+    let supported = true;
+    try { supported = await ImageDecoder.isTypeSupported(guess); } catch { supported = false; }
+    if (supported){
+      const dec = new ImageDecoder({ data: await file.arrayBuffer(), type: guess });
+      try {
+        await dec.tracks.ready;
+        try { await dec.completed; } catch {}
+        const track = dec.tracks.selectedTrack;
+        const count = Math.max(1, Math.min(track.frameCount || 1, 600));
+        const frames = []; let width = 0, height = 0;
+        for (let i = 0; i < count; i++){
+          const {image} = await dec.decode({ frameIndex: i });
+          width = image.displayWidth; height = image.displayHeight;
+          const bitmap = await createImageBitmap(image);
+          const ms = image.duration ? Math.max(20, Math.round(image.duration/1000)) : 100;
+          image.close();
+          frames.push({bitmap, delay: ms});
+          if (onProgress && i % 8 === 0) onProgress(`Decoding ${i+1}/${count}`);
+        }
+        dec.close();
+        return {frames, width, height, kind: guess.split("/")[1]};
+      } catch { try { dec.close(); } catch {} }
+    }
+  }
+  const bitmap = await createImageBitmap(file);
+  return { frames:[{bitmap, delay:100}], width:bitmap.width, height:bitmap.height, kind:"still" };
+}
+
+async function decodeVideo(file, onProgress){
+  const url = URL.createObjectURL(file);
+  const v = document.createElement("video");
+  v.muted = true; v.playsInline = true; v.preload = "auto"; v.src = url;
+  try {
+    await new Promise((res, rej) => {
+      v.onloadedmetadata = res;
+      v.onerror = () => rej(new Error("This browser can't decode that video."));
+    });
+    const dur = isFinite(v.duration) && v.duration > 0 ? v.duration : 0;
+    if (!dur) throw new Error("Video has no readable duration.");
+    const scale = Math.min(1, VIDEO_MAX_EDGE / Math.max(v.videoWidth, v.videoHeight));
+    const W = Math.max(1, Math.round(v.videoWidth*scale));
+    const H = Math.max(1, Math.round(v.videoHeight*scale));
+    const count = Math.min(VIDEO_MAX_FRAMES, Math.max(1, Math.round(dur*VIDEO_FPS)));
+    const c = document.createElement("canvas"); c.width = W; c.height = H;
+    const cx = c.getContext("2d");
+    const frames = [];
+    for (let i = 0; i < count; i++){
+      const t = Math.min(dur - 0.001, (i*dur)/count);
+      await new Promise(res => { v.onseeked = res; v.currentTime = t; });
+      cx.drawImage(v, 0, 0, W, H);
+      frames.push({ bitmap: await createImageBitmap(c),
+                    delay: Math.max(20, Math.round(dur/count*1000)) });
+      if (onProgress && i % 4 === 0) onProgress(`Sampling ${i+1}/${count}`);
+    }
+    return {frames, width:W, height:H};
+  } finally { URL.revokeObjectURL(url); v.src = ""; }
+}
+
+/* =====================================================================
+   3. TIMELINE MERGE
+      Boundaries stay in exact milliseconds. Only the GIF path quantises
+      to centiseconds, and it carries the rounding error forward.
+   ===================================================================== */
+const gcd = (a,b) => { while (b){ [a,b] = [b, a%b]; } return a; };
+const lcm = (a,b) => a / gcd(a,b) * b;
+
+function effDurations(A,B){
+  if (A.static && B.static) return [1000,1000];
+  if (A.static) return [B.duration, B.duration];
+  if (B.static) return [A.duration, A.duration];
+  return [A.duration, B.duration];
+}
+function chooseMode(dA,dB,requested){
+  if (requested !== "auto") return requested;
+  const L = lcm(Math.round(dA), Math.round(dB));
+  return (L <= 12000 && L/dA <= 12 && L/dB <= 12) ? "lcm" : "stretch";
+}
+
+function planTimeline(A,B,requested,maxFrames){
+  const [dA,dB] = effDurations(A,B);
+  const mode = chooseMode(dA,dB,requested);
+  let outDur, kA = 1, kB = 1;
+  if (mode === "lcm") outDur = Math.min(lcm(Math.round(dA), Math.round(dB)), 60000);
+  else if (mode === "stretch"){
+    const reps = Math.max(1, Math.round(dA/dB));
+    outDur = dA; kB = dA/(dB*reps);
+  } else if (mode === "shortest") outDur = Math.min(dA,dB);
+  else outDur = Math.max(dA,dB);
+
+  const marks = new Set([0]);
+  for (const [g,k] of [[A,kA],[B,kB]]){
+    if (g.static) continue;
+    const eff = g.duration*k;
+    if (!(eff > 0)) continue;
+    for (let base = 0; base < outDur; base += eff)
+      for (const s of g.starts){
+        const t = base + s*k;
+        if (t > 0 && t < outDur) marks.add(Math.round(t));
+      }
+  }
+  let times = [...marks].sort((x,y) => x-y);
+  const merged = [0];
+  for (let i = 1; i < times.length; i++)
+    if (times[i] - merged[merged.length-1] >= 20) merged.push(times[i]);
+  times = merged;
+
+  let resampled = false;
+  if (times.length > maxFrames){
+    resampled = true;
+    const step = Math.max(20, Math.round(outDur/maxFrames));
+    times = [];
+    for (let t = 0; t < outDur; t += step) times.push(t);
+  }
+
+  const delaysMs = times.map((t,i) => Math.max(20,
+    (i+1 < times.length ? times[i+1] : Math.round(outDur)) - t));
+  const realTimes = []; let acc = 0;
+  for (const d of delaysMs){ realTimes.push(acc); acc += d; }
+
+  const delaysCs = []; let err = 0;
+  for (const d of delaysMs){ const v = d + err; const c = Math.max(2, Math.round(v/10));
+                             err = v - c*10; delaysCs.push(c); }
+
+  return {mode, outDur:acc, kA, kB, times:realTimes, delaysMs, delaysCs,
+          count:delaysMs.length, resampled};
+}
+
+function frameAt(src,t,k){
+  if (src.static) return 0;
+  let u = (t/k) % src.duration;
+  if (u < 0) u += src.duration;
+  let lo = 0, hi = src.starts.length-1, r = 0;
+  while (lo <= hi){ const m = (lo+hi)>>1;
+    if (src.starts[m] <= u){ r = m; lo = m+1; } else hi = m-1; }
+  return r;
+}
+
+/* =====================================================================
+   4. GIF QUANTIZER + ENCODER
+   ===================================================================== */
+function buildPalette(framesRGBA, reserve){
+  const cap = reserve ? 255 : 256;
+  const exact = new Map(); let overflow = false;
+  outer: for (const px of framesRGBA)
+    for (let i = 0; i < px.length; i += 4){
+      if (px[i+3] < 128) continue;
+      const key = (px[i]<<16)|(px[i+1]<<8)|px[i+2];
+      if (!exact.has(key)){ exact.set(key, exact.size);
+        if (exact.size > cap){ overflow = true; break outer; } }
+    }
+  if (!overflow){
+    const pal = new Uint8Array(Math.max(1, exact.size)*3);
+    for (const [key,i] of exact){ pal[i*3]=key>>16&255; pal[i*3+1]=key>>8&255; pal[i*3+2]=key&255; }
+    return {palette:pal, exact, lut:null, count:Math.max(1, exact.size)};
+  }
+  const hist = new Uint32Array(32768);
+  const sR = new Float64Array(32768), sG = new Float64Array(32768), sB = new Float64Array(32768);
+  for (const px of framesRGBA)
+    for (let i = 0; i < px.length; i += 4){
+      if (px[i+3] < 128) continue;
+      const r=px[i], g=px[i+1], b=px[i+2];
+      const k = ((r>>3)<<10)|((g>>3)<<5)|(b>>3);
+      hist[k]++; sR[k]+=r; sG[k]+=g; sB[k]+=b;
+    }
+  const occ = []; for (let i=0;i<32768;i++) if (hist[i]) occ.push(i);
+  const mkBox = list => {
+    let n=0, lo=[31,31,31], hi=[0,0,0];
+    for (const k of list){ n+=hist[k];
+      const c=[(k>>10)&31,(k>>5)&31,k&31];
+      for (let j=0;j<3;j++){ if(c[j]<lo[j])lo[j]=c[j]; if(c[j]>hi[j])hi[j]=c[j]; } }
+    const span=[hi[0]-lo[0],hi[1]-lo[1],hi[2]-lo[2]];
+    const ch = span.indexOf(Math.max(...span));
+    return {list,n,ch,span:span[ch]};
+  };
+  let boxes = [mkBox(occ)];
+  while (boxes.length < cap){
+    let best=-1, score=0;
+    for (let i=0;i<boxes.length;i++){ const s = boxes[i].span*boxes[i].n;
+      if (boxes[i].list.length>1 && s>score){ score=s; best=i; } }
+    if (best<0) break;
+    const box = boxes[best], sh = [10,5,0][box.ch];
+    const sorted = box.list.slice().sort((a,b) => ((a>>sh)&31)-((b>>sh)&31));
+    let half = box.n/2, run = 0, cut = 0;
+    for (; cut<sorted.length-1; cut++){ run += hist[sorted[cut]]; if (run>=half) break; }
+    boxes.splice(best,1, mkBox(sorted.slice(0,cut+1)), mkBox(sorted.slice(cut+1)));
+  }
+  const count = boxes.length, pal = new Uint8Array(count*3);
+  boxes.forEach((box,i) => { let n=0,r=0,g=0,b=0;
+    for (const k of box.list){ n+=hist[k]; r+=sR[k]; g+=sG[k]; b+=sB[k]; }
+    pal[i*3]=Math.round(r/n); pal[i*3+1]=Math.round(g/n); pal[i*3+2]=Math.round(b/n); });
+  const lut = new Uint8Array(32768);
+  for (let k=0;k<32768;k++){
+    const r=((k>>10)&31)*8.2258, g=((k>>5)&31)*8.2258, b=(k&31)*8.2258;
+    let best=0, bd=Infinity;
+    for (let i=0;i<count;i++){ const dr=r-pal[i*3], dg=g-pal[i*3+1], db=b-pal[i*3+2];
+      const d = dr*dr*0.299+dg*dg*0.587+db*db*0.114;
+      if (d<bd){ bd=d; best=i; } }
+    lut[k]=best;
+  }
+  return {palette:pal, exact:null, lut, count};
+}
+
+class BW {
+  constructor(){ this.b = new Uint8Array(1<<16); this.n = 0; }
+  need(k){ if (this.n+k > this.b.length){ let L=this.b.length; while(L<this.n+k) L*=2;
+    const nb = new Uint8Array(L); nb.set(this.b.subarray(0,this.n)); this.b = nb; } }
+  u8(v){ this.need(1); this.b[this.n++] = v & 255; }
+  u16(v){ this.need(2); this.b[this.n++]=v&255; this.b[this.n++]=(v>>8)&255; }
+  u32(v){ this.u16(v & 0xFFFF); this.u16((v>>>16) & 0xFFFF); }
+  u32be(v){ this.need(4); this.b[this.n++]=(v>>>24)&255; this.b[this.n++]=(v>>>16)&255;
+            this.b[this.n++]=(v>>>8)&255; this.b[this.n++]=v&255; }
+  raw(a){ this.need(a.length); this.b.set(a,this.n); this.n += a.length; }
+  str(s){ for(let i=0;i<s.length;i++) this.u8(s.charCodeAt(i)); }
+  blocks(a){ let p=0; while(p<a.length){ const n=Math.min(255,a.length-p);
+    this.u8(n); this.raw(a.subarray(p,p+n)); p+=n; } this.u8(0); }
+  done(){ return this.b.subarray(0,this.n); }
+}
+
+function lzwEncode(pixels, minCode){
+  const clear = 1<<minCode, eoi = clear+1;
+  let codeSize = minCode+1, next = clear+2;
+  const dict = new Map(), out = new BW();
+  let cur = 0, curBits = 0;
+  const emit = code => { cur |= code<<curBits; curBits += codeSize;
+    while (curBits>=8){ out.u8(cur); cur >>>= 8; curBits -= 8; } };
+  emit(clear);
+  let prefix = pixels[0];
+  for (let i=1;i<pixels.length;i++){
+    const k = pixels[i], key = (prefix<<8)|k;
+    const hit = dict.get(key);
+    if (hit !== undefined){ prefix = hit; continue; }
+    emit(prefix);
+    if (next < 4096){ dict.set(key, next++);
+      if (next > (1<<codeSize) && codeSize < 12) codeSize++; }
+    else { emit(clear); dict.clear(); codeSize = minCode+1; next = clear+2; }
+    prefix = k;
+  }
+  emit(prefix); emit(eoi);
+  if (curBits>0) out.u8(cur);
+  return out.done();
+}
+
+function encodeGIF(W,H,palette,colorCount,frames,transparentIndex){
+  let bits = 1;
+  while ((1<<bits) < Math.max(2, colorCount + (transparentIndex>=0?1:0))) bits++;
+  bits = Math.min(8, bits);
+  const palSize = 1<<bits, gct = new Uint8Array(palSize*3);
+  gct.set(palette.subarray(0, Math.min(palette.length, palSize*3)));
+  const w = new BW();
+  w.str("GIF89a"); w.u16(W); w.u16(H);
+  w.u8(0x80 | ((bits-1)<<4) | (bits-1)); w.u8(0); w.u8(0);
+  w.raw(gct);
+  w.u8(0x21); w.u8(0xFF); w.u8(11); w.str("NETSCAPE2.0");
+  w.u8(3); w.u8(1); w.u16(0); w.u8(0);
+  for (const f of frames){
+    w.u8(0x21); w.u8(0xF9); w.u8(4);
+    w.u8((f.disposal<<2) | (transparentIndex>=0?1:0));
+    w.u16(f.delayCs); w.u8(transparentIndex>=0?transparentIndex:0); w.u8(0);
+    w.u8(0x2C); w.u16(f.x); w.u16(f.y); w.u16(f.w); w.u16(f.h); w.u8(0);
+    const minCode = Math.max(2, bits);
+    w.u8(minCode); w.blocks(lzwEncode(f.indices, minCode));
+  }
+  w.u8(0x3B);
+  return w.done();
+}
+
+/* =====================================================================
+   5. ANIMATED WEBP  (still WebPs remuxed into ANMF chunks)
+   ===================================================================== */
+function riffChunks(u8){
+  const out = []; let p = 12;
+  while (p+8 <= u8.length){
+    const cc = String.fromCharCode(u8[p],u8[p+1],u8[p+2],u8[p+3]);
+    const size = (u8[p+4]|u8[p+5]<<8|u8[p+6]<<16) + u8[p+7]*16777216;
+    out.push({cc, hdr:p, size});
+    p += 8 + size + (size & 1);
+  }
+  return out;
+}
+function anmfPayload(still, durationMs, W, H){
+  const keep = riffChunks(still).filter(c => c.cc==="ALPH"||c.cc==="VP8 "||c.cc==="VP8L");
+  if (!keep.length) throw new Error("Unexpected WebP layout from this browser.");
+  let body = 0;
+  for (const c of keep) body += Math.min(8+c.size+(c.size&1), still.length-c.hdr);
+  const out = new Uint8Array(16+body);
+  const w24 = (o,v) => { out[o]=v&255; out[o+1]=(v>>8)&255; out[o+2]=(v>>16)&255; };
+  w24(0,0); w24(3,0); w24(6,W-1); w24(9,H-1); w24(12, Math.min(16777215, durationMs));
+  out[15] = 2;
+  let p = 16;
+  for (const c of keep){
+    const len = Math.min(8+c.size+(c.size&1), still.length-c.hdr);
+    out.set(still.subarray(c.hdr, c.hdr+len), p); p += len;
+  }
+  return {payload:out, hasAlpha: keep.some(c => c.cc==="ALPH"||c.cc==="VP8L")};
+}
+function muxWebP(W,H,parts,hasAlpha){
+  const w = new BW();
+  const chunk = (cc,data) => { w.str(cc); w.u32(data.length); w.raw(data);
+                               if (data.length & 1) w.u8(0); };
+  w.str("RIFF"); w.u32(0); w.str("WEBP");
+  const vp8x = new Uint8Array(10);
+  vp8x[0] = 0x02 | (hasAlpha ? 0x10 : 0);
+  const w24 = (a,o,v) => { a[o]=v&255; a[o+1]=(v>>8)&255; a[o+2]=(v>>16)&255; };
+  w24(vp8x,4,W-1); w24(vp8x,7,H-1);
+  chunk("VP8X", vp8x);
+  chunk("ANIM", new Uint8Array(6));
+  for (const p of parts) chunk("ANMF", p);
+  const bytes = w.done(), size = bytes.length - 8;
+  bytes[4]=size&255; bytes[5]=(size>>8)&255; bytes[6]=(size>>16)&255; bytes[7]=(size>>>24)&255;
+  return bytes;
+}
+
+/* =====================================================================
+   6. APNG  (still PNGs remuxed into fcTL/fdAT frames)
+   ===================================================================== */
+const CRC_T = (() => { const t = new Uint32Array(256);
+  for (let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c = c&1 ? 0xEDB88320^(c>>>1) : c>>>1;
+    t[n]=c>>>0; } return t; })();
+function crc32(buf,start,end){
+  let c = 0xFFFFFFFF;
+  for (let i=start;i<end;i++) c = CRC_T[(c ^ buf[i]) & 255] ^ (c>>>8);
+  return (c ^ 0xFFFFFFFF)>>>0;
+}
+function pngChunks(u8){
+  const out = []; let p = 8;
+  while (p+8 <= u8.length){
+    const len = (u8[p]<<24|u8[p+1]<<16|u8[p+2]<<8|u8[p+3])>>>0;
+    out.push({type:String.fromCharCode(u8[p+4],u8[p+5],u8[p+6],u8[p+7]), len, data:p+8});
+    p += 12 + len;
+  }
+  return out;
+}
+function muxAPNG(stills, delaysMs, W, H){
+  const first = pngChunks(stills[0]);
+  const ihdr = first.find(c => c.type === "IHDR");
+  if (!ihdr) throw new Error("Unexpected PNG layout.");
+  const ihdrBytes = stills[0].subarray(ihdr.data, ihdr.data+ihdr.len);
+  const w = new BW();
+  w.raw(new Uint8Array([137,80,78,71,13,10,26,10]));
+  const put = (type,data) => { w.u32be(data.length); const at = w.n;
+    w.str(type); w.raw(data); w.u32be(crc32(w.b, at, w.n)); };
+  put("IHDR", ihdrBytes);
+  const actl = new BW(); actl.u32be(stills.length); actl.u32be(0);
+  put("acTL", actl.done());
+  let seq = 0;
+  for (let i=0;i<stills.length;i++){
+    const chunks = pngChunks(stills[i]);
+    const hdr = chunks.find(c => c.type === "IHDR");
+    const same = hdr && hdr.len === ihdr.len &&
+      stills[i].subarray(hdr.data, hdr.data+hdr.len).every((v,j) => v === ihdrBytes[j]);
+    if (!same) throw new Error("Frames came back with mismatched PNG headers.");
+    const idats = chunks.filter(c => c.type === "IDAT");
+    let total = 0; for (const c of idats) total += c.len;
+    const data = new Uint8Array(total); let o = 0;
+    for (const c of idats){ data.set(stills[i].subarray(c.data, c.data+c.len), o); o += c.len; }
+    const fctl = new Uint8Array(26);
+    const dv = new DataView(fctl.buffer);
+    dv.setUint32(0, seq++); dv.setUint32(4, W); dv.setUint32(8, H);
+    dv.setUint32(12, 0); dv.setUint32(16, 0);
+    dv.setUint16(20, Math.min(65535, delaysMs[i])); dv.setUint16(22, 1000);
+    fctl[24] = 0; fctl[25] = 0;
+    put("fcTL", fctl);
+    if (i === 0) put("IDAT", data);
+    else { const s = seq++; const fd = new Uint8Array(4+data.length);
+           new DataView(fd.buffer).setUint32(0, s); fd.set(data, 4); put("fdAT", fd); }
+  }
+  put("IEND", new Uint8Array(0));
+  return w.done();
+}
+
+/* =====================================================================
+   7. ISOBMFF MUXER  →  MP4 and animated AVIF
+   ===================================================================== */
+const cat = list => { let n = 0; for (const a of list) n += a.length;
+  const o = new Uint8Array(n); let p = 0; for (const a of list){ o.set(a,p); p += a.length; } return o; };
+const s4  = s => Uint8Array.from([s.charCodeAt(0),s.charCodeAt(1),s.charCodeAt(2),s.charCodeAt(3)]);
+const U32 = v => { const a = new Uint8Array(4); new DataView(a.buffer).setUint32(0, v>>>0); return a; };
+const U16 = v => { const a = new Uint8Array(2); new DataView(a.buffer).setUint16(0, v & 0xFFFF); return a; };
+const U8A = arr => Uint8Array.from(arr);
+function box(type, ...parts){
+  const body = cat(parts), out = new Uint8Array(8 + body.length);
+  new DataView(out.buffer).setUint32(0, out.length);
+  out.set(s4(type), 4); out.set(body, 8);
+  return out;
+}
+const fbox = (type, ver, flags, ...parts) =>
+  box(type, U8A([ver, (flags>>16)&255, (flags>>8)&255, flags&255]), ...parts);
+const MATRIX = cat([U32(0x00010000),U32(0),U32(0),U32(0),U32(0x00010000),U32(0),
+                    U32(0),U32(0),U32(0x40000000)]);
+
+class Bits {
+  constructor(u8){ this.d = u8; this.p = 0; }
+  f(n){ let v = 0; for (let i=0;i<n;i++){
+    v = (v*2) + ((this.d[this.p>>3] >> (7-(this.p&7))) & 1); this.p++; } return v; }
+  uvlc(){ let z = 0; while (!this.f(1)){ z++; if (z > 31) return 0; }
+          return z ? ((1<<z)-1) + this.f(z) : 0; }
+}
+function findSequenceHeader(chunk){
+  let p = 0;
+  while (p < chunk.length){
+    const h = chunk[p];
+    const type = (h >> 3) & 0x0F, ext = (h >> 2) & 1, hasSize = (h >> 1) & 1;
+    let q = p + 1 + (ext ? 1 : 0);
+    let size = 0;
+    if (hasSize){ let shift = 0;
+      for (let i=0;i<8;i++){ const b = chunk[q++]; size += (b & 0x7F) * Math.pow(2, shift);
+        shift += 7; if (!(b & 0x80)) break; }
+    } else size = chunk.length - q;
+    if (type === 1) return chunk.subarray(p, q + size);
+    p = q + size;
+  }
+  return null;
+}
+function av1ConfigRecord(description, firstChunk){
+  if (description && description.length) return description;
+  const obu = findSequenceHeader(firstChunk);
+  if (!obu) throw new Error("No AV1 sequence header in the first frame.");
+  let q = 1 + ((obu[0] >> 2) & 1 ? 1 : 0);
+  if ((obu[0] >> 1) & 1){ while (obu[q] & 0x80) q++; q++; }
+  const r = new Bits(obu.subarray(q));
+  const seqProfile = r.f(3);
+  r.f(1);                                     // still_picture
+  const reduced = r.f(1);
+  let levelIdx = 0, tier = 0;
+  if (reduced) levelIdx = r.f(5);
+  else {
+    let decoderModel = 0;
+    if (r.f(1)){                              // timing_info_present_flag
+      r.f(32); r.f(32);
+      if (r.f(1)) r.uvlc();
+      decoderModel = r.f(1);
+      if (decoderModel){ r.f(5); r.f(32); r.f(5); r.f(5); }
+    }
+    const initialDelay = r.f(1);
+    const ops = r.f(5) + 1;
+    for (let i=0;i<ops;i++){
+      r.f(12);
+      const lvl = r.f(5);
+      const t = lvl > 7 ? r.f(1) : 0;
+      if (i === 0){ levelIdx = lvl; tier = t; }
+      if (decoderModel) r.f(1);
+      if (initialDelay && r.f(1)) r.f(4);
+    }
+  }
+  // Canvas frames are always 8-bit 4:2:0 colour, so those fields are fixed.
+  return cat([U8A([0x81, ((seqProfile & 7) << 5) | (levelIdx & 31),
+                   ((tier & 1) << 7) | 0x0C, 0x00]), obu]);
+}
+
+function sampleEntry(type, W, H, configBox){
+  return box(type,
+    U8A([0,0,0,0,0,0]), U16(1),
+    U16(0), U16(0), U32(0), U32(0), U32(0),
+    U16(W), U16(H),
+    U32(0x00480000), U32(0x00480000), U32(0),
+    U16(1), new Uint8Array(32),
+    U16(0x0018), U8A([0xFF,0xFF]),
+    configBox);
+}
+
+function buildMoov(o, mdatOffset){
+  const {W,H,samples,timescale,duration,entryType,configBox,handler} = o;
+  const stts = [];
+  for (const s of samples){
+    const last = stts[stts.length-1];
+    if (last && last[1] === s.duration) last[0]++; else stts.push([1, s.duration]);
+  }
+  const syncs = samples.map((s,i) => s.key ? i+1 : 0).filter(Boolean);
+  const stbl = [
+    fbox("stsd", 0, 0, U32(1), sampleEntry(entryType, W, H, configBox)),
+    fbox("stts", 0, 0, U32(stts.length), ...stts.flatMap(([n,d]) => [U32(n), U32(d)])),
+    ...(syncs.length === samples.length ? []
+        : [fbox("stss", 0, 0, U32(syncs.length), ...syncs.map(U32))]),
+    fbox("stsc", 0, 0, U32(1), U32(1), U32(samples.length), U32(1)),
+    fbox("stsz", 0, 0, U32(0), U32(samples.length), ...samples.map(s => U32(s.data.length))),
+    fbox("stco", 0, 0, U32(1), U32(mdatOffset))
+  ];
+  return box("moov",
+    fbox("mvhd", 0, 0, U32(0), U32(0), U32(timescale), U32(duration),
+      U32(0x00010000), U16(0x0100), U16(0), U32(0), U32(0), MATRIX,
+      new Uint8Array(24), U32(2)),
+    box("trak",
+      fbox("tkhd", 0, 3, U32(0), U32(0), U32(1), U32(0), U32(duration),
+        U32(0), U32(0), U16(0), U16(0), U16(0), U16(0), MATRIX,
+        U32(W*65536), U32(H*65536)),
+      box("mdia",
+        fbox("mdhd", 0, 0, U32(0), U32(0), U32(timescale), U32(duration), U16(0x55C4), U16(0)),
+        fbox("hdlr", 0, 0, U32(0), s4(handler), new Uint8Array(12), U8A([0])),
+        box("minf",
+          fbox("vmhd", 0, 1, U16(0), U16(0), U16(0), U16(0)),
+          box("dinf", fbox("dref", 0, 0, U32(1), fbox("url ", 0, 1))),
+          box("stbl", ...stbl)))));
+}
+
+function buildMetaBox(W, H, configBox, itemOffset, itemLength){
+  return fbox("meta", 0, 0,
+    fbox("hdlr", 0, 0, U32(0), s4("pict"), new Uint8Array(12), U8A([0])),
+    fbox("pitm", 0, 0, U16(1)),
+    fbox("iloc", 0, 0, U8A([0x44, 0x00]), U16(1),
+      U16(1), U16(0), U16(1), U32(itemOffset), U32(itemLength)),
+    fbox("iinf", 0, 0, U16(1),
+      fbox("infe", 2, 0, U16(1), U16(0), s4("av01"), U8A([0]))),
+    box("iprp",
+      box("ipco", configBox,
+        fbox("ispe", 0, 0, U32(W), U32(H)),
+        fbox("pixi", 0, 0, U8A([3,8,8,8]))),
+      fbox("ipma", 0, 0, U32(1), U16(1), U8A([3, 0x81, 0x02, 0x03]))));
+}
+
+function muxISOBMFF({W,H,samples,entryType,configBox,brands,avif}){
+  const mdatBody = cat(samples.map(s => s.data));
+  const duration = samples.reduce((a,s) => a + s.duration, 0);
+  const ftyp = box("ftyp", s4(brands[0]), U32(0), ...brands.map(s4));
+  const handler = avif ? "pict" : "vide";
+  const build = mdatOffset => {
+    const parts = [ftyp];
+    if (avif) parts.push(buildMetaBox(W, H, configBox, mdatOffset, samples[0].data.length));
+    parts.push(buildMoov({W,H,samples,timescale:1000,duration,entryType,configBox,handler},
+                         mdatOffset));
+    return parts;
+  };
+  // Offset fields are fixed width, so a throwaway pass gives the exact header size.
+  const headerLen = build(0).reduce((a,b) => a + b.length, 0);
+  const mdatOffset = headerLen + 8;
+  const mdatHeader = new Uint8Array(8);
+  new DataView(mdatHeader.buffer).setUint32(0, 8 + mdatBody.length);
+  mdatHeader.set(s4("mdat"), 4);
+  return cat([...build(mdatOffset), mdatHeader, mdatBody]);
+}
+
+/* =====================================================================
+   8. EBML MUXER  →  WebM
+   ===================================================================== */
+function ebmlSize(n){
+  for (let len=1; len<=8; len++){
+    if (n < Math.pow(2, 7*len) - 1){
+      const a = new Uint8Array(len);
+      let v = n + Math.pow(2, 7*len);
+      for (let i=len-1;i>=0;i--){ a[i] = v % 256; v = Math.floor(v/256); }
+      return a;
+    }
+  }
+  throw new Error("Element too large for EBML.");
+}
+const el = (id, payload) => cat([U8A(id), ebmlSize(payload.length), payload]);
+function ebmlUint(v){
+  const bytes = []; let n = Math.max(0, Math.round(v));
+  do { bytes.unshift(n % 256); n = Math.floor(n/256); } while (n > 0);
+  return U8A(bytes);
+}
+const ebmlFloat64 = v => { const a = new Uint8Array(8);
+  new DataView(a.buffer).setFloat64(0, v); return a; };
+const ebmlStr = s => U8A([...s].map(c => c.charCodeAt(0)));
+
+function muxWebM({W,H,samples,codecId,codecPrivate}){
+  const header = el([0x1A,0x45,0xDF,0xA3], cat([
+    el([0x42,0x86], ebmlUint(1)), el([0x42,0xF7], ebmlUint(1)),
+    el([0x42,0xF2], ebmlUint(4)), el([0x42,0xF3], ebmlUint(8)),
+    el([0x42,0x82], ebmlStr("webm")), el([0x42,0x87], ebmlUint(2)),
+    el([0x42,0x85], ebmlUint(2))]));
+  const duration = samples.reduce((a,s) => a + s.duration, 0);
+  const info = el([0x15,0x49,0xA9,0x66], cat([
+    el([0x2A,0xD7,0xB1], ebmlUint(1000000)),        // one tick = 1 ms
+    el([0x4D,0x80], ebmlStr("overlay")), el([0x57,0x41], ebmlStr("overlay")),
+    el([0x44,0x89], ebmlFloat64(duration))]));
+  const trackParts = [
+    el([0xD7], ebmlUint(1)), el([0x73,0xC5], ebmlUint(1)), el([0x83], ebmlUint(1)),
+    el([0x86], ebmlStr(codecId))];
+  if (codecPrivate && codecPrivate.length) trackParts.push(el([0x63,0xA2], codecPrivate));
+  trackParts.push(el([0xE0], cat([el([0xB0], ebmlUint(W)), el([0xBA], ebmlUint(H))])));
+  const tracks = el([0x16,0x54,0xAE,0x6B], el([0xAE], cat(trackParts)));
+
+  const clusters = []; let i = 0;
+  while (i < samples.length){
+    const base = samples[i].timestamp, blocks = [];
+    while (i < samples.length){
+      const rel = samples[i].timestamp - base;
+      if (rel > 30000) break;
+      const s = samples[i];
+      const block = new Uint8Array(4 + s.data.length);
+      block[0] = 0x81;                                   // track 1 as a vint
+      new DataView(block.buffer).setInt16(1, rel);
+      block[3] = s.key ? 0x80 : 0x00;
+      block.set(s.data, 4);
+      blocks.push(el([0xA3], block));
+      i++;
+    }
+    clusters.push(el([0x1F,0x43,0xB6,0x75], cat([el([0xE7], ebmlUint(base)), ...blocks])));
+  }
+  return cat([header, el([0x18,0x53,0x80,0x67], cat([info, tracks, ...clusters]))]);
+}
+
+/* =====================================================================
+   9. WEBCODECS ENCODE DRIVER
+   ===================================================================== */
+async function encodeWithVideoEncoder(fmt, W, H, plan, geom, quality, say){
+  const R = makeRenderCanvas(W, H, geom, true);
+  const fps = Math.max(1, plan.count / (plan.outDur/1000));
+  const bitrate = Math.round(W * H * fps * (0.03 + 0.22*quality));
+  const chunks = []; let description = null, failure = null;
+  const enc = new VideoEncoder({
+    output: (chunk, meta) => {
+      if (!description && meta && meta.decoderConfig && meta.decoderConfig.description)
+        description = new Uint8Array(meta.decoderConfig.description);
+      const data = new Uint8Array(chunk.byteLength);
+      chunk.copyTo(data);
+      chunks.push({data, key: chunk.type === "key", timestamp: chunk.timestamp});
+    },
+    error: e => { failure = e; }
+  });
+  enc.configure(Object.assign({
+    codec: fmt.codec, width: W, height: H, bitrate,
+    framerate: Math.max(1, Math.round(fps)), latencyMode: "quality"
+  }, fmt.config || {}));
+
+  for (let i = 0; i < plan.count; i++){
+    if (failure) throw failure;
+    R.at(plan.times[i] + 1);
+    const vf = new VideoFrame(R.c, {
+      timestamp: plan.times[i] * 1000, duration: plan.delaysMs[i] * 1000 });
+    enc.encode(vf, {keyFrame: i === 0 || i % 60 === 0});
+    vf.close();
+    while (enc.encodeQueueSize > 6){ await idle(3); if (failure) throw failure; }
+    if (i % 8 === 0){ say(`Encoding ${i+1}/${plan.count}`); await idle(); }
+  }
+  await enc.flush();
+  enc.close();
+  if (failure) throw failure;
+  if (!chunks.length) throw new Error("The encoder produced no frames.");
+
+  chunks.sort((a,b) => a.timestamp - b.timestamp);
+  const samples = chunks.map((c,i) => ({
+    data: c.data, key: c.key,
+    timestamp: Math.round(c.timestamp/1000),
+    duration: plan.delaysMs[Math.min(i, plan.delaysMs.length-1)]
+  }));
+  samples[0].key = true;
+  return {samples, description};
+}
+
+async function verifyBlob(blob, kind){
+  if (kind === "avif"){
+    if (typeof ImageDecoder === "undefined") return true;
+    let dec;
+    try {
+      dec = new ImageDecoder({ data: await blob.arrayBuffer(), type:"image/avif" });
+      await dec.tracks.ready;
+      const {image} = await dec.decode({frameIndex:0});
+      image.close(); dec.close(); return true;
+    } catch { try { if (dec) dec.close(); } catch {} return false; }
+  }
+  const url = URL.createObjectURL(blob);
+  try {
+    const v = document.createElement("video");
+    v.muted = true; v.preload = "metadata"; v.src = url;
+    return await new Promise(res => {
+      v.onloadedmetadata = () => res(v.videoWidth > 0);
+      v.onerror = () => res(false);
+      setTimeout(() => res(false), 4000);
+    });
+  } finally { URL.revokeObjectURL(url); }
+}
+
+/* =====================================================================
+   10. FORMAT REGISTRY
+   ===================================================================== */
+const AV1_CODECS  = ["av01.0.08M.08", "av01.0.05M.08", "av01.0.04M.08"];
+const H264_CODECS = ["avc1.640028", "avc1.4D0032", "avc1.42E01E"];
+const VP9_CODECS  = ["vp09.00.10.08"];
+const VP8_CODECS  = ["vp8"];
+
+async function firstSupportedCodec(list){
+  if (typeof VideoEncoder === "undefined") return null;
+  for (const codec of list){
+    try {
+      const r = await VideoEncoder.isConfigSupported({codec, width:256, height:256,
+        bitrate:1000000, framerate:30});
+      if (r && r.supported) return codec;
+    } catch {}
+  }
+  return null;
+}
+
+const FORMATS = [];
+async function buildFormats(){
+  FORMATS.length = 0;
+  FORMATS.push({id:"gif", label:"GIF", ext:"gif", kind:"gif",
+    note:"Universal, but 256 colours, 1-bit alpha and 10 ms timing steps."});
+
+  const probe = document.createElement("canvas"); probe.width = probe.height = 8;
+  const webpOK = await new Promise(r => probe.toBlob(b => r(!!b && b.type==="image/webp"), "image/webp", .8));
+  if (webpOK) FORMATS.push({id:"webp", label:"Animated WebP", ext:"webp", kind:"webp", quality:true,
+    note:"Best default. Full colour, real alpha, millisecond timing, far smaller than GIF."});
+
+  const pngOK = await new Promise(r => probe.toBlob(b => r(!!b && b.type==="image/png"), "image/png"));
+  if (pngOK) FORMATS.push({id:"apng", label:"APNG", ext:"png", kind:"apng",
+    note:"Lossless with 8-bit alpha. Large files — best for short, flat-colour loops."});
+
+  const av1  = await firstSupportedCodec(AV1_CODECS);
+  const h264 = await firstSupportedCodec(H264_CODECS);
+  const vp9  = await firstSupportedCodec(VP9_CODECS);
+  const vp8  = await firstSupportedCodec(VP8_CODECS);
+
+  if (av1) FORMATS.push({id:"avif", label:"Animated AVIF", ext:"avif", kind:"iso", codec:av1,
+    quality:true, avif:true, entry:"av01",
+    brands:["avis","avif","av01","miaf","MA1B","msf1","iso8"],
+    note:"AV1 frames muxed into an image-sequence container. Smallest of the lot, but opaque only — a solid background is used."});
+  if (av1) FORMATS.push({id:"mp4-av1", label:"MP4 · AV1", ext:"mp4", kind:"iso", codec:av1,
+    quality:true, entry:"av01", brands:["isom","iso2","av01","mp41"],
+    note:"Encoded offline at exact frame times. No transparency."});
+  if (h264) FORMATS.push({id:"mp4-h264", label:"MP4 · H.264", ext:"mp4", kind:"iso", codec:h264,
+    quality:true, entry:"avc1", brands:["isom","iso2","avc1","mp41"], config:{avc:{format:"avc"}},
+    note:"Most widely playable video option. No transparency."});
+  if (vp9) FORMATS.push({id:"webm-vp9", label:"WebM · VP9", ext:"webm", kind:"ebml", codec:vp9,
+    quality:true, codecId:"V_VP9", note:"Encoded offline at exact frame times. No transparency."});
+  if (av1) FORMATS.push({id:"webm-av1", label:"WebM · AV1", ext:"webm", kind:"ebml", codec:av1,
+    quality:true, codecId:"V_AV1", note:"Encoded offline at exact frame times. No transparency."});
+  if (vp8) FORMATS.push({id:"webm-vp8", label:"WebM · VP8", ext:"webm", kind:"ebml", codec:vp8,
+    quality:true, codecId:"V_VP8", note:"Encoded offline at exact frame times. No transparency."});
+
+  if (!av1 && !h264 && !vp9 && !vp8 && typeof MediaRecorder !== "undefined"){
+    for (const [mime,label,ext] of [
+      ["video/webm;codecs=vp9","WebM · VP9","webm"],
+      ["video/webm;codecs=vp8","WebM · VP8","webm"],
+      ["video/mp4;codecs=avc1.42E01E","MP4 · H.264","mp4"]]){
+      let ok = false; try { ok = MediaRecorder.isTypeSupported(mime); } catch {}
+      if (ok) FORMATS.push({id:"rec:"+mime, label:label+" (real time)", ext, kind:"recorder",
+        mime, quality:true, recorder:true,
+        note:"This browser has no VideoEncoder, so the clip is captured in real time and takes as long as it runs."});
+    }
+  }
+
+  const sel = $("#fmt");
+  sel.innerHTML = FORMATS.map(f => `<option value="${f.id}">${esc(f.label)}</option>`).join("");
+  sel.value = FORMATS.some(f => f.id === "webp") ? "webp" : "gif";
+  onFormat();
+}
+
+/* =====================================================================
+   11. APP STATE + COMPOSITING
+   ===================================================================== */
+const S = {
+  src:[null,null], blend:"source-over", opacity:1, scale:1, ox:.5, oy:.5,
+  canvasMode:"base", bg:"transparent", bgColor:"#000000",
+  sync:"auto", maxFrames:180, outScale:1, quality:.82, loops:3,
+  playing:true, t0:performance.now(), plan:null
+};
+const stage = $("#stage"), sctx = stage.getContext("2d", {willReadFrequently:true});
+const tl = $("#timeline"), tctx = tl.getContext("2d");
+
+function geometry(){
+  const [A,B] = S.src;
+  if (!A) return {w:320,h:240,dx:0,dy:0};
+  if (S.canvasMode === "base" || !B) return {w:A.width,h:A.height,dx:0,dy:0};
+  const ow = B.width*S.scale, oh = B.height*S.scale;
+  const cx = A.width*S.ox, cy = A.height*S.oy;
+  const minX = Math.min(0, cx-ow/2), maxX = Math.max(A.width, cx+ow/2);
+  const minY = Math.min(0, cy-oh/2), maxY = Math.max(A.height, cy+oh/2);
+  return {w:Math.ceil(maxX-minX), h:Math.ceil(maxY-minY), dx:-minX, dy:-minY};
+}
+
+function composite(ctx, W, H, t, dx, dy, forceOpaque){
+  const [A,B] = S.src, plan = S.plan;
+  ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = 1;
+  ctx.clearRect(0,0,W,H);
+  if (S.bg === "solid" || forceOpaque){ ctx.fillStyle = S.bgColor; ctx.fillRect(0,0,W,H); }
+  if (!A) return;
+  ctx.drawImage(A.frames[frameAt(A, t, plan?plan.kA:1)].bitmap, dx, dy);
+  if (!B) return;
+  const ow = B.width*S.scale, oh = B.height*S.scale;
+  ctx.globalCompositeOperation = S.blend; ctx.globalAlpha = S.opacity;
+  ctx.drawImage(B.frames[frameAt(B, t, plan?plan.kB:1)].bitmap,
+                dx + A.width*S.ox - ow/2, dy + A.height*S.oy - oh/2, ow, oh);
+  ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = 1;
+}
+
+function makeRenderCanvas(W, H, g, opaque){
+  const c = document.createElement("canvas"); c.width = W; c.height = H;
+  const cx = c.getContext("2d", {willReadFrequently:true, alpha:!opaque});
+  cx.imageSmoothingEnabled = true;
+  const sx = W/g.w, sy = H/g.h;
+  return { c, cx, at(t){ cx.save(); cx.scale(sx, sy);
+    composite(cx, g.w, g.h, t, g.dx, g.dy, opaque); cx.restore(); } };
+}
+
+let pausedAt = 0;
+function loop(){
+  requestAnimationFrame(loop);
+  const g = geometry();
+  if (stage.width !== g.w || stage.height !== g.h){
+    stage.width = g.w; stage.height = g.h;
+    stage.style.width = Math.min(g.w, 560) + "px";
+  }
+  const plan = S.plan, dur = plan ? plan.outDur : 1000;
+  const t = S.playing ? ((performance.now() - S.t0) % dur) : pausedAt;
+  let snapped = t;
+  if (plan){
+    let lo = 0, hi = plan.times.length-1;
+    while (lo <= hi){ const m = (lo+hi)>>1;
+      if (plan.times[m] <= t){ snapped = plan.times[m]; lo = m+1; } else hi = m-1; }
+    snapped += 1;
+  }
+  composite(sctx, g.w, g.h, snapped, g.dx, g.dy);
+  $("#pos").textContent = (t/1000).toFixed(2) + "s";
+  drawTimeline(t);
+}
+
+function repeated(src, k, dur){
+  if (src.static || !(src.duration > 0)) return [0];
+  const out = [], eff = src.duration*k;
+  for (let base = 0; base < dur-1; base += eff)
+    for (const s of src.starts){ const t = base + s*k; if (t < dur) out.push(t); }
+  return out;
+}
+
+function drawTimeline(t){
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const cssW = tl.clientWidth || 600;
+  if (tl.width !== Math.round(cssW*dpr)){ tl.width = Math.round(cssW*dpr); tl.height = Math.round(118*dpr); }
+  const g = tctx; g.setTransform(dpr,0,0,dpr,0,0);
+  const W = cssW, H = 118, L = 12, R = W-12, span = R-L;
+  g.clearRect(0,0,W,H);
+  const [A,B] = S.src, plan = S.plan;
+  g.font = "9px ui-monospace, monospace"; g.textBaseline = "middle";
+  if (!A || !B || !plan){
+    g.fillStyle = "#8D93B5"; g.font = "11px ui-monospace, monospace";
+    g.fillText("Waiting for two files.", L, 26); return;
+  }
+  const dur = plan.outDur, x = ms => L + span*(ms/dur);
+  const lanes = [
+    {y:16,h:20,color:"#FF3366",label:"BASE",   times:repeated(A, plan.kA, dur)},
+    {y:46,h:26,color:"#FFCC00",label:"OUTPUT", times:plan.times},
+    {y:82,h:20,color:"#33CCCC",label:"OVERLAY",times:repeated(B, plan.kB, dur)}];
+  for (const lane of lanes){
+    for (let i=0;i<lane.times.length;i++){
+      const x0 = x(lane.times[i]);
+      const x1 = i+1 < lane.times.length ? x(lane.times[i+1]) : R;
+      g.fillStyle = lane.color; g.globalAlpha = i%2 ? .30 : .62;
+      g.fillRect(x0, lane.y, Math.max(.6, x1-x0-.7), lane.h);
+    }
+    g.globalAlpha = 1; g.fillStyle = lane.color;
+    g.fillText(lane.label + " ×" + lane.times.length, L, lane.y-6);
+  }
+  const px = x(t);
+  g.strokeStyle = "#EDEEF5"; g.lineWidth = 1;
+  g.beginPath(); g.moveTo(px,8); g.lineTo(px,H-6); g.stroke();
+  g.fillStyle = "#8D93B5"; g.fillText((dur/1000).toFixed(2)+"s loop", R-58, H-8);
+}
+
+const MODE_TEXT = {
+  lcm:"Both loop a whole number of times, so the seam is invisible and nothing is retimed.",
+  stretch:"The overlay's frame delays are scaled so one of its cycles lands exactly on the base's.",
+  shortest:"Output stops when the shorter one ends. The longer gets cut mid-cycle.",
+  longest:"Output runs to the longer one. The shorter repeats and may cut mid-cycle."
+};
+
+function replan(){
+  const [A,B] = S.src, R = $("#readout");
+  if (!A || !B){
+    S.plan = null; $("#render").disabled = true; $("#syncNote").textContent = "";
+    R.innerHTML = '<span style="color:var(--ink-dim)">Load two files to see the plan.</span>';
+    return;
+  }
+  const plan = planTimeline(A, B, S.sync, S.maxFrames);
+  S.plan = plan; S.t0 = performance.now();
+  $("#render").disabled = false;
+  $("#syncNote").textContent = MODE_TEXT[plan.mode];
+  const g = geometry();
+  const ow = Math.round(g.w*S.outScale), oh = Math.round(g.h*S.outScale);
+  $("#dims").textContent = ow + "×" + oh;
+  const heavy = plan.count*ow*oh > 40e6;
+  const dur = s => s.static ? "still" : (s.duration/1000).toFixed(2)+"s";
+  R.innerHTML = `
+    <div>Base <b>${dur(A)}</b> · ${A.frames.length} frames · ${esc(A.kind)}</div>
+    <div>Overlay <b>${dur(B)}</b> · ${B.frames.length} frames · ${esc(B.kind)}${
+      plan.kB!==1?` · retimed ×${(1/plan.kB).toFixed(3)}`:""}</div>
+    <div>Output <b>${(plan.outDur/1000).toFixed(2)}s</b> · <b>${plan.count}</b> frames · ${ow}×${oh}</div>
+    <div class="${heavy?"warn":"ok"}">${plan.resampled
+      ? "Resampled to fit the frame budget — raise it for exact timing."
+      : heavy ? "Large output. Drop the output scale or frame budget."
+      : "Exact frame boundaries preserved."}</div>`;
+}
+
+/* =====================================================================
+   12. EXPORT
+   ===================================================================== */
+let busy = false;
+const currentFormat = () => FORMATS.find(f => f.id === $("#fmt").value) || FORMATS[0];
+
+async function render(){
+  if (busy || !S.plan) return;
+  busy = true;
+  const btn = $("#render"), out = $("#out");
+  btn.disabled = true; out.innerHTML = "";
+  const say = m => { btn.textContent = m; };
+  const fmt = currentFormat();
+  try {
+    const plan = S.plan, g = geometry();
+    const W = Math.max(2, Math.round(g.w*S.outScale) & ~1);
+    const H = Math.max(2, Math.round(g.h*S.outScale) & ~1);
+    let blob, warning = "";
+
+    if (fmt.kind === "gif")            blob = await exportGIF(W,H,g,plan,say);
+    else if (fmt.kind === "webp")      blob = await exportWebP(W,H,g,plan,say);
+    else if (fmt.kind === "apng")      blob = await exportAPNG(W,H,g,plan,say);
+    else if (fmt.kind === "recorder")  blob = await exportRecorder(fmt,W,H,g,plan,say);
+    else {
+      blob = await exportCoded(fmt,W,H,g,plan,say);
+      say("Verifying");
+      if (!await verifyBlob(blob, fmt.avif ? "avif" : "video")){
+        if (fmt.avif) throw new Error("The muxed AVIF didn't decode here. Try MP4 · AV1 instead.");
+        const fallback = ["video/webm;codecs=vp9","video/webm;codecs=vp8"]
+          .find(m => { try { return MediaRecorder.isTypeSupported(m); } catch { return false; } });
+        if (!fallback) throw new Error("The muxed file didn't play back here.");
+        warning = "Muxed file failed verification — recorded in real time instead.";
+        blob = await exportRecorder({mime:fallback}, W, H, g, plan, say);
+      }
+    }
+
+    const url = URL.createObjectURL(blob);
+    const kb = blob.size/1024;
+    const asVideo = fmt.ext === "mp4" || fmt.ext === "webm";
+    out.innerHTML = `${asVideo
+        ? `<video class="prev" src="${url}" autoplay loop muted playsinline></video>`
+        : `<img class="prev" src="${url}" alt="Merged result">`}
+      <div class="readout" style="margin-top:8px">
+        <b>${W}×${H}</b> · ${plan.count} frames · ${(plan.outDur/1000).toFixed(2)}s ·
+        <b>${kb>1024 ? (kb/1024).toFixed(2)+" MB" : Math.round(kb)+" KB"}</b>
+        ${warning ? `<div class="warn">${esc(warning)}</div>` : ""}
+      </div>
+      <a class="dl" href="${url}" download="overlay.${fmt.ext}">Download ${fmt.ext.toUpperCase()}</a>`;
+  } catch (e){
+    out.innerHTML = `<div class="readout warn">Couldn't render: ${esc(e.message || e)}</div>`;
+  } finally {
+    busy = false; $("#render").disabled = false; $("#render").textContent = "Render";
+  }
+}
+
+async function exportGIF(W,H,g,plan,say){
+  const R = makeRenderCanvas(W,H,g,false);
+  const rgba = [];
+  for (let i=0;i<plan.count;i++){
+    R.at(plan.times[i]+1);
+    rgba.push(R.cx.getImageData(0,0,W,H).data);
+    if (i%8===0){ say(`Compositing ${i+1}/${plan.count}`); await idle(); }
+  }
+  say("Building palette"); await idle(16);
+  const needsAlpha = S.bg === "transparent";
+  const {palette, exact, lut, count} = buildPalette(rgba, true);
+  const transparentIndex = count;
+  const pal = new Uint8Array((count+1)*3); pal.set(palette.subarray(0,count*3));
+  const map = (r,gg,b) => exact ? exact.get((r<<16)|(gg<<8)|b)
+                                : lut[((r>>3)<<10)|((gg>>3)<<5)|(b>>3)];
+  const frames = []; let prev = null;
+  for (let i=0;i<plan.count;i++){
+    const px = rgba[i], idx = new Uint8Array(W*H);
+    for (let p=0,j=0;p<px.length;p+=4,j++)
+      idx[j] = px[p+3]<128 ? transparentIndex : map(px[p],px[p+1],px[p+2]);
+    if (!needsAlpha && prev){
+      let x0=W,y0=H,x1=-1,y1=-1;
+      for (let y=0,j=0;y<H;y++) for (let x=0;x<W;x++,j++)
+        if (idx[j]!==prev[j]){ if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y; }
+      if (x1<0){ x0=y0=0; x1=y1=0; }
+      const fw=x1-x0+1, fh=y1-y0+1, sub=new Uint8Array(fw*fh);
+      for (let y=0;y<fh;y++) for (let x=0;x<fw;x++){
+        const j=(y+y0)*W+(x+x0);
+        sub[y*fw+x] = idx[j]===prev[j] ? transparentIndex : idx[j];
+      }
+      frames.push({x:x0,y:y0,w:fw,h:fh,indices:sub,delayCs:plan.delaysCs[i],disposal:1});
+    } else frames.push({x:0,y:0,w:W,h:H,indices:idx,delayCs:plan.delaysCs[i],
+                        disposal: needsAlpha?2:1});
+    prev = idx;
+    if (i%8===0){ say(`Encoding ${i+1}/${plan.count}`); await idle(); }
+  }
+  say("Writing file"); await idle(16);
+  return new Blob([encodeGIF(W,H,pal,count,frames,transparentIndex)], {type:"image/gif"});
+}
+
+async function exportWebP(W,H,g,plan,say){
+  const R = makeRenderCanvas(W,H,g,false);
+  const parts = []; let hasAlpha = false;
+  for (let i=0;i<plan.count;i++){
+    R.at(plan.times[i]+1);
+    const blob = await new Promise(r => R.c.toBlob(r, "image/webp", S.quality));
+    if (!blob || blob.type !== "image/webp") throw new Error("This browser can't encode WebP.");
+    const still = new Uint8Array(await blob.arrayBuffer());
+    const {payload, hasAlpha:a} = anmfPayload(still, plan.delaysMs[i], W, H);
+    parts.push(payload); hasAlpha = hasAlpha || a;
+    if (i%4===0){ say(`Encoding ${i+1}/${plan.count}`); await idle(); }
+  }
+  say("Muxing"); await idle(16);
+  return new Blob([muxWebP(W,H,parts,hasAlpha)], {type:"image/webp"});
+}
+
+async function exportAPNG(W,H,g,plan,say){
+  const R = makeRenderCanvas(W,H,g,false);
+  const stills = [];
+  for (let i=0;i<plan.count;i++){
+    R.at(plan.times[i]+1);
+    const d = R.cx.getImageData(0,0,1,1); d.data[3] = Math.min(d.data[3], 254);
+    R.cx.putImageData(d,0,0);
+    const blob = await new Promise(r => R.c.toBlob(r, "image/png"));
+    stills.push(new Uint8Array(await blob.arrayBuffer()));
+    if (i%4===0){ say(`Encoding ${i+1}/${plan.count}`); await idle(); }
+  }
+  say("Muxing"); await idle(16);
+  return new Blob([muxAPNG(stills, plan.delaysMs, W, H)], {type:"image/png"});
+}
+
+async function exportCoded(fmt, W, H, g, plan, say){
+  const {samples, description} =
+    await encodeWithVideoEncoder(fmt, W, H, plan, g, S.quality, say);
+  say("Muxing"); await idle(16);
+  if (fmt.kind === "ebml"){
+    const codecPrivate = fmt.codecId === "V_AV1"
+      ? av1ConfigRecord(description, samples[0].data) : description;
+    return new Blob([muxWebM({W,H,samples,codecId:fmt.codecId,codecPrivate})],
+                    {type:"video/webm"});
+  }
+  const configBox = fmt.entry === "av01"
+    ? box("av1C", av1ConfigRecord(description, samples[0].data))
+    : box("avcC", description || new Uint8Array(0));
+  const bytes = muxISOBMFF({W, H, samples, entryType: fmt.entry, configBox,
+                            brands: fmt.brands, avif: !!fmt.avif});
+  return new Blob([bytes], {type: fmt.avif ? "image/avif" : "video/mp4"});
+}
+
+async function exportRecorder(fmt, W, H, g, plan, say){
+  const R = makeRenderCanvas(W,H,g,true);
+  const fps = Math.min(50, Math.max(10, Math.round(plan.count/(plan.outDur/1000))));
+  const stream = R.c.captureStream(fps);
+  const rec = new MediaRecorder(stream, {mimeType: fmt.mime,
+    videoBitsPerSecond: Math.round(W*H*fps*0.15*(0.3+S.quality))});
+  const chunks = [];
+  rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+  const stopped = new Promise(r => rec.onstop = r);
+  const total = plan.outDur * S.loops;
+  R.at(1); rec.start();
+  const t0 = performance.now();
+  await new Promise(resolve => {
+    (function step(){
+      const elapsed = performance.now() - t0;
+      if (elapsed >= total){ resolve(); return; }
+      say(`Recording ${(elapsed/1000).toFixed(1)}s / ${(total/1000).toFixed(1)}s`);
+      R.at((elapsed % plan.outDur) + 1);
+      requestAnimationFrame(step);
+    })();
+  });
+  await idle(120);
+  rec.stop(); await stopped;
+  stream.getTracks().forEach(t => t.stop());
+  if (!chunks.length) throw new Error("The recorder produced no data.");
+  return new Blob(chunks, {type: fmt.mime});
+}
+
+/* =====================================================================
+   13. UI WIRING
+   ===================================================================== */
+function renderSlot(i, statusText, isError){
+  const slot = document.querySelector(`.slot[data-i="${i}"]`);
+  const s = S.src[i];
+  const label = `<span class="lbl">${i ? "Overlay" : "Base"}</span>`;
+  const meta = statusText
+    ? `<span class="meta${isError ? " warn" : ""}">${esc(statusText)}</span>`
+    : `<span class="meta">${s ? esc(s.meta) : ""}</span>`;
+  slot.innerHTML = label + (s
+    ? `<img class="thumb" src="${s.thumb}" alt=""><span class="name">${esc(s.name)}</span>${meta}`
+    : `<span class="hint">Drop a GIF, WebP, AVIF, APNG or video</span>${meta}`);
+}
+
+function disposeSource(i){
+  const s = S.src[i];
+  if (!s) return;
+  if (s.thumb && s.thumb.startsWith("blob:")) URL.revokeObjectURL(s.thumb);
+  for (const f of s.frames){ try { f.bitmap.close(); } catch {} }
+  S.src[i] = null;
+}
+
+const loading = [false, false];
+async function accept(i, file){
+  if (loading[i]) return;
+  loading[i] = true;
+  renderSlot(i, "Decoding…");
+  try {
+    const src = await loadSource(file, msg => renderSlot(i, msg));
+    if (src.kind === "video"){
+      const c = document.createElement("canvas");
+      c.width = src.width; c.height = src.height;
+      c.getContext("2d").drawImage(src.frames[0].bitmap, 0, 0);
+      src.thumb = c.toDataURL("image/png");
+    } else src.thumb = URL.createObjectURL(file);
+    src.meta = `${src.width}×${src.height} · ${src.frames.length}f · ` +
+               (src.static ? "still" : (src.duration/1000).toFixed(2)+"s");
+    disposeSource(i);
+    S.src[i] = src;
+    renderSlot(i); replan();
+  } catch (e){
+    renderSlot(i, e.message || "Couldn't read that file.", true);
+  } finally { loading[i] = false; }
+}
+
+document.querySelectorAll(".slot").forEach(slot => {
+  const i = +slot.dataset.i, input = $("#file"+i);
+  const pick = () => { input.value = ""; input.click(); };
+  slot.addEventListener("click", pick);
+  slot.addEventListener("keydown", e => {
+    if (e.key === "Enter" || e.key === " "){ e.preventDefault(); pick(); } });
+  slot.addEventListener("dragover", e => { e.preventDefault(); slot.classList.add("hot"); });
+  slot.addEventListener("dragleave", () => slot.classList.remove("hot"));
+  slot.addEventListener("drop", e => {
+    e.preventDefault(); slot.classList.remove("hot");
+    const f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) accept(i, f);
+  });
+  input.addEventListener("change", () => { if (input.files[0]) accept(i, input.files[0]); });
+  renderSlot(i);
+});
+
+const bind = (id,ev,fn) => $(id).addEventListener(ev,fn);
+bind("#sync","change", e => { S.sync = e.target.value; replan(); });
+bind("#maxf","input", e => { S.maxFrames = +e.target.value;
+  $("#maxfv").textContent = S.maxFrames+" max"; replan(); });
+bind("#blend","change", e => S.blend = e.target.value);
+bind("#op","input", e => { S.opacity = e.target.value/100; $("#opv").textContent = e.target.value+"%"; });
+bind("#sc","input", e => { S.scale = e.target.value/100;
+  $("#scv").textContent = e.target.value+"%"; replan(); });
+bind("#osc","input", e => { S.outScale = e.target.value/100;
+  $("#oscv").textContent = e.target.value+"%"; replan(); });
+bind("#q","input", e => { S.quality = e.target.value/100; $("#qv").textContent = e.target.value; });
+bind("#loops","input", e => S.loops = Math.max(1, Math.min(20, +e.target.value || 1)));
+bind("#bgColor","input", e => S.bgColor = e.target.value);
+bind("#fmt","change", onFormat);
+
+function onFormat(){
+  const f = currentFormat(); if (!f) return;
+  $("#fmtNote").textContent = f.note;
+  $("#qualityCtl").hidden = !f.quality;
+  $("#loopsCtl").hidden = !f.recorder;
+  $("#render").textContent = "Render";
+}
+
+function seg(aId,bId,aVal,bVal,set){
+  const a = $(aId), b = $(bId);
+  a.onclick = () => { a.setAttribute("aria-pressed","true"); b.setAttribute("aria-pressed","false"); set(aVal); };
+  b.onclick = () => { b.setAttribute("aria-pressed","true"); a.setAttribute("aria-pressed","false"); set(bVal); };
+}
+seg("#cvBase","#cvFit","base","fit", v => { S.canvasMode = v; replan(); });
+seg("#bgT","#bgC","transparent","solid", v => S.bg = v);
+
+bind("#swap","click", () => { S.src.reverse(); renderSlot(0); renderSlot(1); replan(); });
+bind("#center","click", () => { S.ox = .5; S.oy = .5; replan(); });
+bind("#render","click", render);
+bind("#play","click", e => {
+  if (S.playing) pausedAt = (performance.now()-S.t0) % (S.plan ? S.plan.outDur : 1000);
+  else S.t0 = performance.now() - pausedAt;
+  S.playing = !S.playing;
+  e.target.textContent = S.playing ? "Pause" : "Play";
+});
+
+let dragging = false, last = null;
+stage.addEventListener("pointerdown", e => {
+  if (!S.src[1]) return;
+  dragging = true; last = e; stage.classList.add("drag"); stage.setPointerCapture(e.pointerId);
+});
+stage.addEventListener("pointermove", e => {
+  if (!dragging || !S.src[0]) return;
+  const k = stage.width / stage.getBoundingClientRect().width;
+  S.ox += (e.clientX-last.clientX)*k / S.src[0].width;
+  S.oy += (e.clientY-last.clientY)*k / S.src[0].height;
+  last = e;
+  if (S.canvasMode === "fit") replan();
+});
+stage.addEventListener("pointerup", () => { dragging = false; stage.classList.remove("drag"); });
+
+$("#maxfv").textContent = S.maxFrames+" max";
+$("#opv").textContent = "100%"; $("#scv").textContent = "100%";
+$("#oscv").textContent = "100%"; $("#qv").textContent = "82";
+replan(); buildFormats(); loop();
+</script>
+</body>
+</html>
