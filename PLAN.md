@@ -160,9 +160,20 @@ breaks", not as a list of probable defects. Rank your suspicion in this order:
    anything branded `avis`, including a still that libavif itself produced once relabelled.
    Relabelling ours to `avif` makes macOS read it — and makes libavif see one frame instead of
    six. `avis` is correct and stays.
-2. **`av1ConfigRecord` sequence-header parsing.** Only exercised when Chrome's AV1 encoder
-   omits `decoderConfig.description`. The `timing_info` and `decoder_model_info` branches are
-   the fiddly part. If `description` is present this code never runs, so the bug can hide.
+2. **`av1ConfigRecord` sequence-header parsing.** This entry had it backwards, and #17 caught
+   it: **Chrome 148 never supplies `decoderConfig.description`**, so far from hiding, this
+   parser runs on *every* AV1 export and its output is load-bearing for animated AVIF,
+   MP4 · AV1 and WebM · AV1 alike. The dormant branch is the other one — a browser that *does*
+   supply a description, which nothing here has yet been seen to do.
+
+   The `timing_info` and `decoder_model_info` branches were still the fiddly part, and one of
+   them was wrong. `operating_parameters_info()` follows `decoder_model_present_for_this_op`
+   and is `2 × buffer_delay_length + 1` bits; the parser read the flag and skipped the payload,
+   so every operating point after the first came from the wrong bit offset. Nothing noticed,
+   because only operating point 0 is used and its level and tier are read before the mistake —
+   which is exactly the kind of latent fault that surfaces the moment someone parses further,
+   as the HDR or 10-bit work noted in section 3 would have to. **Fixed and tested in #21**,
+   against hand-built headers covering the branches Chrome never emits.
 3. **EBML `muxWebM`.** `SimpleBlock` relative timecodes are `int16`, so clusters must break
    before 32767 ms; the current break is at 30000 ms. **Verified in #18** on a 44-second clip:
    two clusters, maximum relative timecode 29600. The margin is structural — the condition is

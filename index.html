@@ -804,10 +804,13 @@ function findSequenceHeader(chunk){
   }
   return null;
 }
-function av1ConfigRecord(description, firstChunk){
-  if (description && description.length) return description;
-  const obu = findSequenceHeader(firstChunk);
-  if (!obu) throw new Error("No AV1 sequence header in the first frame.");
+/* Reads sequence_header_obu() far enough to fill in an AV1CodecConfigurationRecord.
+   Split out from av1ConfigRecord so it can be tested against hand-built headers:
+   Chrome's encoder emits one shape, and the branches it never takes are exactly
+   the ones most likely to be wrong. `bits` is how far the reader got, which is
+   what lets a test prove the whole header was consumed rather than merely that
+   the first operating point looked plausible. */
+function parseSequenceHeader(obu){
   let q = 1 + ((obu[0] >> 2) & 1 ? 1 : 0);
   if ((obu[0] >> 1) & 1){ while (obu[q] & 0x80) q++; q++; }
   const r = new Bits(obu.subarray(q));
@@ -817,24 +820,37 @@ function av1ConfigRecord(description, firstChunk){
   let levelIdx = 0, tier = 0;
   if (reduced) levelIdx = r.f(5);
   else {
-    let decoderModel = 0;
+    let decoderModel = 0, delayBits = 0;
     if (r.f(1)){                              // timing_info_present_flag
-      r.f(32); r.f(32);
-      if (r.f(1)) r.uvlc();
+      r.f(32); r.f(32);                       // num_units_in_display_tick, time_scale
+      if (r.f(1)) r.uvlc();                   // equal_picture_interval
       decoderModel = r.f(1);
-      if (decoderModel){ r.f(5); r.f(32); r.f(5); r.f(5); }
+      // buffer_delay_length_minus_1 sizes operating_parameters_info() below,
+      // so it has to be kept rather than skipped.
+      if (decoderModel){ delayBits = r.f(5) + 1; r.f(32); r.f(5); r.f(5); }
     }
     const initialDelay = r.f(1);
     const ops = r.f(5) + 1;
     for (let i=0;i<ops;i++){
-      r.f(12);
+      r.f(12);                                // operating_point_idc
       const lvl = r.f(5);
       const t = lvl > 7 ? r.f(1) : 0;
       if (i === 0){ levelIdx = lvl; tier = t; }
-      if (decoderModel) r.f(1);
+      // operating_parameters_info(): decoder_buffer_delay, encoder_buffer_delay,
+      // low_delay_mode_flag. Skipping it leaves every later operating point
+      // being read from the wrong bit offset.
+      if (decoderModel && r.f(1)){ r.f(delayBits); r.f(delayBits); r.f(1); }
       if (initialDelay && r.f(1)) r.f(4);
     }
   }
+  return {seqProfile, levelIdx, tier, reduced, bits: r.p};
+}
+
+function av1ConfigRecord(description, firstChunk){
+  if (description && description.length) return description;
+  const obu = findSequenceHeader(firstChunk);
+  if (!obu) throw new Error("No AV1 sequence header in the first frame.");
+  const {seqProfile, levelIdx, tier} = parseSequenceHeader(obu);
   // Canvas frames are always 8-bit 4:2:0 colour, so those fields are fixed.
   return cat([U8A([0x81, ((seqProfile & 7) << 5) | (levelIdx & 31),
                    ((tier & 1) << 7) | 0x0C, 0x00]), obu]);
