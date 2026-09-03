@@ -49,6 +49,10 @@ Notable changes to Overlay. Format follows [Keep a Changelog](https://keepachang
   `VideoEncoder`, tears down the recorder's capture stream, and offers nothing rather than a
   partial file.
 
+- GIF palette building, quantization and LZW encoding now run in a Worker. The longest
+  main-thread block during a large export drops from 136 ms to 18 ms, and no longer grows with
+  output size. `npm run bench:gif` measures it.
+
 ### Changed
 
 - `PLAN.md` section 4 records that all four of its suspects were put in front of third-party
