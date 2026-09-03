@@ -103,7 +103,10 @@ back to querying and replacing individual children.
 
 **Output dimensions are forced even via `& ~1`.** H.264 and AV1 reject odd dimensions.
 
-**APNG nudges pixel (0,0) alpha to 254.** Some PNG encoders drop the alpha channel on fully
+**APNG caps pixel (0,0) alpha at 254.** Not "sets to 254" — the code is `Math.min(a, 254)`, so
+an already-transparent corner stays transparent. What matters is that it is never 255. Removing
+the cap makes that corner come back fully opaque, so this is load-bearing today rather than
+vestigial; #24 has a test. Some PNG encoders drop the alpha channel on fully
 opaque frames, producing a different `IHDR` colour type mid-animation, which corrupts the
 APNG. The nudge guarantees a consistent alpha channel. The visual cost is one pixel at 99.6%
 opacity.
@@ -263,8 +266,17 @@ will point at the box far faster than reading the spec again.
 Also force each mode manually and confirm the timeline strip's three lanes line up with the
 readout.
 
-**Composite.** Blending with a transparent background and opacity below 50% — GIF's 1-bit
-alpha thresholds those pixels away entirely. Confirm the WebP and APNG outputs keep them.
+**Composite.** ~~Blending with a transparent background and opacity below 50%.~~ **Confirmed
+in #24**, and automated. GIF's frame 0 comes back with alpha values of exactly `{0, 255}` and
+nothing between, so the thresholding is clean rather than fringed; a pixel at alpha 102 is
+dropped and one at 152 is kept. WebP and APNG preserve both within 4 of the source value.
+
+Note the composite only carries partial alpha where the *base* is transparent — blending an
+overlay over an opaque base yields opaque, whatever the opacity. The fixture uses
+`02-disposal-2.gif`, whose frames are small squares on a transparent canvas, for that reason.
+
+The opaque formats were checked against a magenta background rather than the default black, so
+that a format ignoring `bgColor` and filling black is visible instead of indistinguishable.
 
 **Colour.** ~~Scaling output below 100% introduces interpolation and should push it to median
 cut.~~ **Corrected in #25.** Two things here were wrong.

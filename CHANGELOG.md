@@ -57,6 +57,10 @@ Notable changes to Overlay. Format follows [Keep a Changelog](https://keepachang
   `Palette reduced to N colours`. Previously nothing told the user whether their colours had
   survived the encode.
 
+- Tests covering a transparent background with a partly-transparent overlay through every
+  output format: GIF's 1-bit thresholding, WebP and APNG preserving partial alpha, the opaque
+  formats honouring the background colour, and GIF's disposal mode switching with it.
+
 ### Changed
 
 - `PLAN.md` section 4 records that all four of its suspects were put in front of third-party
