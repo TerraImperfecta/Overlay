@@ -14,6 +14,11 @@
 // not shipping Safari. They differ, most notably on codecs Safari gets from
 // system frameworks. Treat a webkit result as evidence about WebKit and a
 // strong hint about Safari, not as proof.
+//
+// CI runs this project on macOS rather than Linux. WebKit's Linux port uses
+// different media backends entirely and crashes on this page there, but the
+// reason to move it is the stronger one: Safari exists only on Apple platforms,
+// so a Linux WebKit result would be weak evidence about Safari even if it ran.
 
 const { test, expect } = require("@playwright/test");
 
