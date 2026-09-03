@@ -2,6 +2,7 @@
 """Read per-frame timing straight out of an MP4/AVIF or WebM container.
 
     python3 test/inspect_container.py out/mp4-av1.mp4 out/webm-vp9.webm ...
+    python3 test/inspect_container.py --meta out/avif.avif
 
 Written for issue #18. `verifyBlob()` and `ImageDecoder` only prove that some
 decoder accepted the file; they say nothing about whether the boxes are
@@ -15,6 +16,11 @@ run-length compression, the single-chunk `stsc`/`stco` arrangement, and WebM
 before 32767ms. ffprobe would answer "it parsed"; this answers "here is what
 the fields actually say".
 
+`--meta` pulls apart an AVIF's still-image fallback -- `pitm`, `iinf`, `iloc`,
+`iprp` -- and checks the claim in issue #20 that the primary still item's `iloc`
+extent points at the same bytes as sample zero in `mdat`. That is checkable
+rather than merely observable, which is the point.
+
 Standard library only.
 """
 
@@ -25,7 +31,8 @@ import sys
 # ISOBMFF (MP4, animated AVIF)
 # --------------------------------------------------------------------------
 
-CONTAINER_BOXES = {b"moov", b"trak", b"mdia", b"minf", b"stbl", b"edts", b"meta"}
+CONTAINER_BOXES = {b"moov", b"trak", b"mdia", b"minf", b"stbl", b"edts", b"meta",
+                   b"iprp", b"ipco", b"iinf"}
 
 
 def walk_boxes(data, start=0, end=None, depth=0):
@@ -44,8 +51,13 @@ def walk_boxes(data, start=0, end=None, depth=0):
         if size < header or p + size > end:
             break
         body = p + header
-        # `meta` is a FullBox: version+flags precede its children.
-        child_start = body + 4 if typ == b"meta" else body
+        # FullBox containers put version+flags (and sometimes a count) before
+        # their children; stepping over them is what makes iinf/ipco visible.
+        child_start = body
+        if typ == b"meta":
+            child_start = body + 4
+        elif typ == b"iinf":
+            child_start = body + 4 + (4 if data[body] else 2)
         yield typ, body, p + size, depth
         if typ in CONTAINER_BOXES:
             yield from walk_boxes(data, child_start, p + size, depth + 1)
@@ -225,9 +237,133 @@ def report(path):
     print(f"sync samples    : {m['sync']}")
 
 
+# --------------------------------------------------------------------------
+# The AVIF `meta` box: the still-image fallback (issue #20)
+# --------------------------------------------------------------------------
+
+def parse_meta(data):
+    """Pull apart pitm / iinf / iloc / iprp so the still item can be checked.
+
+    The claim under test is that the primary still item's `iloc` extent points
+    at the same bytes as sample zero in `mdat`. That is checkable rather than
+    merely observable, which is the whole reason this exists.
+    """
+    out = {"pitm": None, "items": {}, "iloc": {}, "ipco": [], "ipma": {}}
+
+    for typ, s, e, _d in walk_boxes(data):
+        if typ == b"pitm":
+            v = data[s]
+            out["pitm"] = (struct.unpack(">I", data[s + 4:s + 8])[0] if v
+                           else struct.unpack(">H", data[s + 4:s + 6])[0])
+
+        elif typ == b"infe":
+            v = data[s]
+            if v >= 2:
+                iid = (struct.unpack(">I", data[s + 4:s + 8])[0] if v == 3
+                       else struct.unpack(">H", data[s + 4:s + 6])[0])
+                off = s + (8 if v == 3 else 6)
+                off += 2                                   # protection_index
+                out["items"][iid] = data[off:off + 4].decode("latin-1")
+
+        elif typ == b"iloc":
+            v, p = data[s], s + 4
+            sizes = data[p]; p += 1
+            offset_size, length_size = sizes >> 4, sizes & 15
+            sizes2 = data[p]; p += 1
+            base_offset_size, index_size = sizes2 >> 4, sizes2 & 15
+            if v < 2:
+                count = struct.unpack(">H", data[p:p + 2])[0]; p += 2
+            else:
+                count = struct.unpack(">I", data[p:p + 4])[0]; p += 4
+            out["iloc"]["field_sizes"] = {
+                "offset": offset_size, "length": length_size,
+                "base_offset": base_offset_size, "index": index_size}
+            out["iloc"]["version"] = v
+            out["iloc"]["items"] = []
+            rd = lambda q, n: (int.from_bytes(data[q:q + n], "big") if n else 0, q + n)
+            for _ in range(count):
+                if v < 2:
+                    iid = struct.unpack(">H", data[p:p + 2])[0]; p += 2
+                else:
+                    iid = struct.unpack(">I", data[p:p + 4])[0]; p += 4
+                method = None
+                if v in (1, 2):
+                    method = struct.unpack(">H", data[p:p + 2])[0] & 15; p += 2
+                p += 2                                     # data_reference_index
+                base, p = rd(p, base_offset_size)
+                n_ext = struct.unpack(">H", data[p:p + 2])[0]; p += 2
+                extents = []
+                for _ in range(n_ext):
+                    if v in (1, 2) and index_size:
+                        _idx, p = rd(p, index_size)
+                    off, p = rd(p, offset_size)
+                    ln, p = rd(p, length_size)
+                    extents.append({"offset": base + off, "length": ln})
+                out["iloc"]["items"].append(
+                    {"item": iid, "construction_method": method, "extents": extents})
+
+        elif typ == b"ipco":
+            for t2, s2, e2, _ in walk_boxes(data, s, e):
+                out["ipco"].append({"index": len(out["ipco"]) + 1,
+                                    "type": t2.decode("latin-1"), "bytes": e2 - s2})
+
+        elif typ == b"ipma":
+            v, flags = data[s], int.from_bytes(data[s + 1:s + 4], "big")
+            p = s + 4
+            n = struct.unpack(">I", data[p:p + 4])[0]; p += 4
+            for _ in range(n):
+                if v < 1:
+                    iid = struct.unpack(">H", data[p:p + 2])[0]; p += 2
+                else:
+                    iid = struct.unpack(">I", data[p:p + 4])[0]; p += 4
+                cnt = data[p]; p += 1
+                assoc = []
+                for _ in range(cnt):
+                    if flags & 1:
+                        raw = struct.unpack(">H", data[p:p + 2])[0]; p += 2
+                        assoc.append({"essential": bool(raw & 0x8000), "property": raw & 0x7FFF})
+                    else:
+                        raw = data[p]; p += 1
+                        assoc.append({"essential": bool(raw & 0x80), "property": raw & 0x7F})
+                out["ipma"][iid] = assoc
+    return out
+
+
+def report_meta(path):
+    with open(path, "rb") as fh:
+        data = fh.read()
+    m = parse_isobmff(data)
+    meta = parse_meta(data)
+    print(f"\n=== {path}: meta box ===")
+    if not m["has_meta"]:
+        print("no meta box -- no still-image fallback in this file")
+        return
+    print(f"brands          : {m['brands']['major']} {m['brands']['compatible']}")
+    print(f"primary item    : {meta['pitm']}")
+    print(f"items           : {meta['items']}")
+    print(f"iloc version    : {meta['iloc'].get('version')}  field sizes {meta['iloc'].get('field_sizes')}")
+    for it in meta["iloc"].get("items", []):
+        print(f"  item {it['item']}: construction_method={it['construction_method']} extents={it['extents']}")
+    print(f"ipco properties : {[(p['index'], p['type']) for p in meta['ipco']]}")
+    print(f"ipma            : {meta['ipma']}")
+
+    # The claim: the still item aliases sample zero.
+    if m["chunk_offsets"] and m["sizes"] and meta["iloc"].get("items"):
+        s0_off, s0_len = m["chunk_offsets"][0], m["sizes"][0]
+        ext = meta["iloc"]["items"][0]["extents"][0]
+        ok = (ext["offset"] == s0_off and ext["length"] == s0_len)
+        print(f"\nsample 0 in mdat: offset={s0_off} length={s0_len}")
+        print(f"still item extent: offset={ext['offset']} length={ext['length']}")
+        print(f"aliases sample 0 : {'YES' if ok else 'NO -- MISMATCH'}")
+
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print(__doc__)
         sys.exit(2)
-    for p in sys.argv[1:]:
-        report(p)
+    args = [a for a in sys.argv[1:] if a != "--meta"]
+    for p in args:
+        if "--meta" in sys.argv:
+            report_meta(p)
+        else:
+            report(p)
