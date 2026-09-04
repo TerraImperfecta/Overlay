@@ -1,5 +1,6 @@
-# The tool itself is one file and ships as-is; everything ignored here belongs
-# to the test tooling, or is local scratch and editor droppings.
+# The tool ships as-is -- index.html, styles.css and js/ are the deployed site,
+# with nothing to build. Everything ignored here belongs to the test tooling, or
+# is local scratch and editor droppings.
 
 # Encoder output dumped for external validation with ffprobe / avifdec /
 # webpinfo / pngcheck. The test corpus itself under corpus/ IS committed —

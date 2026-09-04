@@ -1,13 +1,21 @@
 # Overlay — handoff
 
-Single-file browser tool that merges two animations into one file on a shared timeline.
-Everything is in `index.html`. The **deployed output is a static site** — no server-side code,
-nothing to run but files — served over http(s) at <https://overlay.immanuelqrw.dev>.
+Browser tool that merges two animations into one file on a shared timeline. `index.html` is
+the markup, `styles.css` the styles, and `js/` the script — one file per numbered section. The
+**deployed output is a static site** — no server-side code, nothing to build, nothing to run but
+files — served over http(s) at <https://overlay.immanuelqrw.dev>.
 
 A build step and dependencies are permitted. They were not, originally, and several decisions
 below were made under that older rule; where one of them rested on it, it is now marked and
 reopened rather than quietly kept. `file://` is no longer supported: it was a consequence of the
-single-file rule, not a goal in itself, and preserving it distorted the code.
+single-file rule, not a goal in itself, and preserving it distorted the code. The single file
+itself is gone too — split in #75 — but no build step arrived with it, and none is wanted.
+
+**The scripts are classic, not modules, and their order in `index.html` is load-bearing.** They
+share one global scope, which is what lets `gifWorkerSource()` assemble a worker by stringifying
+functions that resolve each other, and what lets the tests reach `S`, `geometry()`,
+`parseSequenceHeader` and the rest at all. Converting to modules would break both, and the second
+is not worth a `window` surface that exists only for tests.
 
 What has *not* changed: no user data leaves the browser. There are no network calls in the
 tool's own operation, and there is nothing to upload to.
@@ -35,6 +43,8 @@ downstream code depends only on that shape.
 ## 2. Layout of `index.html`
 
 The script is divided by numbered banner comments. Keep them; they are the map.
+
+Each row is a file in `js/`, named for its number and contents.
 
 | Section | Contents |
 |---|---|
