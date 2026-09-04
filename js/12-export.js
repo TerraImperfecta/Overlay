@@ -45,27 +45,32 @@ export async function render(){
 
     blob = await (EXPORTERS[fmt.kind] || EXPORTERS.coded)(fmt,W,H,g,plan,say,view);
 
-    /* Every format is verified before it is offered, not just the coded ones.
-       Real-time capture builds its own frame count from the wall clock, so
-       holding the recorder to plan.count would fail it for the wrong reason. */
+    /* Every format is verified before it is offered, not just the coded ones. */
     say("Verifying");
     const still = !!VERIFY_MIME[fmt.kind];
     const check = await verifyBlob(blob, still ? fmt.kind : (fmt.avif ? "avif" : "video"),
-                                   fmt.kind === "recorder" ? 0 : plan.count);
+                                   plan.count);
     if (!check.ok){
       if (still)
         throw new Error(`The ${fmt.label} we produced ${check.reason}.`);
       if (fmt.avif)
         throw new Error("The muxed AVIF didn't decode here. Try MP4 · AV1 instead.");
-      if (fmt.kind === "recorder")
-        throw new Error("The recorded clip didn't play back here.");
+      /* The last use of MediaRecorder. It is no longer offered as a format
+         (#59) because its frame times follow the capture clock rather than the
+         merged timeline -- but here the choice is not between a worse file and
+         a better one, it is between a worse file and none, since our own mux
+         has just produced something that will not play. Said plainly, because
+         the user asked for exact timing and is not getting it. */
       const fallback = ["video/webm;codecs=vp9","video/webm;codecs=vp8"]
         .find(m => { try { return MediaRecorder.isTypeSupported(m); } catch { return false; } });
       if (!fallback) throw new Error("The muxed file didn't play back here.");
-      warning = "Muxed file failed verification — recorded in real time instead.";
+      warning = "Muxed file failed verification — recorded in real time instead, " +
+                "so its frame times follow the capture clock, not the merged timeline.";
       blob = await exportRecorder({mime:fallback}, W, H, g, plan, say, view);
       /* The substitute gets checked too. Offering a file we already know is
          broken would defeat the point of checking at all. */
+      /* No frame count: real-time capture builds its own from the wall clock,
+         so holding it to plan.count would fail it for the wrong reason. */
       if (!(await verifyBlob(blob, "video")).ok)
         throw new Error("Neither the muxed file nor the real-time recording played back here.");
     }
@@ -194,7 +199,10 @@ export async function exportRecorder(fmt, W, H, g, plan, say, view){
   const chunks = [];
   rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
   const stopped = new Promise(r => rec.onstop = r);
-  const total = plan.outDur * S.loops;
+  /* Exactly the plan, once. The loop count was a control belonging to the
+     format entries that #59 removed; the repair below wants the clip the user
+     asked for, not three of it. */
+  const total = plan.outDur;
   R.at(1); rec.start();
   const t0 = performance.now();
   let cancelled = false;
@@ -228,6 +236,5 @@ export const EXPORTERS = {
   gif:      (fmt,W,H,g,plan,say,view) => exportGIF(W,H,g,plan,say,view),
   webp:     (fmt,W,H,g,plan,say,view) => exportWebP(W,H,g,plan,say,view),
   apng:     (fmt,W,H,g,plan,say,view) => exportAPNG(W,H,g,plan,say,view),
-  recorder: (fmt,W,H,g,plan,say,view) => exportRecorder(fmt,W,H,g,plan,say,view),
   coded:    (fmt,W,H,g,plan,say,view) => exportCoded(fmt,W,H,g,plan,say,view),
 };

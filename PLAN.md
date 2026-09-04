@@ -190,11 +190,32 @@ imports, and a module that throws during evaluation fails the import that pulled
 missing header would cost the whole app, where the old `<script>` tag would have cost only the
 icon. There is a test that breaks the serialiser and asserts the app comes up regardless.
 
-**`MediaRecorder` is a fallback, not a path.** It only appears in the format list when no
-`VideoEncoder` codec is available at all, and is labelled "(real time)". Do not promote it.
+**`MediaRecorder` is not a format, and should not become one again.** It used to be offered
+whenever no `VideoEncoder` codec existed, labelled "(real time)". #59 forced that branch for the
+first time — no engine lacks a `VideoEncoder`, so it had never run — and measured what it
+produced. Against a plan with boundaries of 100/48/52/96/30 ms:
 
-**Exercised at last in #59**, by deleting `window.VideoEncoder` in an `addInitScript` rather
-than waiting for a browser that lacks it — #19 established that all three engines have a full
+| | frame times (ms) |
+|---|---|
+| plan | 0, 100, 148, 200, 296, 326 |
+| recorded | 0, 70, 137, 204, 271, 336 |
+
+A uniform resample at the capture rate, drifting up to 30 ms, and 336 ms of a 400 ms clip. That
+is the drift this tool exists to prevent, and no label on a dropdown makes an option that cannot
+preserve frame boundaries worth offering. Removed in #84.
+
+Nobody is left without an export. On every engine, with no `VideoEncoder`, GIF and APNG both
+remain — they need no browser codec, where WebP does and WebKit has none — and both keep exact
+timing. That is what makes the removal safe rather than merely principled.
+
+**What survives is the repair, and only that.** When a coded mux produces something that will not
+play, `render()` records in real time instead and says so, including that the frame times are the
+capture clock's. There the choice is not between a worse file and a better one but between a
+worse file and none, and the substitute is verified before it is offered. It records the plan
+exactly once: the loop count was a control belonging to the removed formats.
+
+**It was exercised at last in #59**, by deleting `window.VideoEncoder` in an `addInitScript`
+rather than waiting for a browser that lacks it — #19 established that all three engines have a full
 codec set, so the branch was unreachable from the suite and four claims about it had never run:
 the labelling, that the output passes `verifyBlob` (#41), that cancelling tears down the capture
 stream (#45), and that the substitute offered after a failed mux is itself verified (#41). All
@@ -693,6 +714,12 @@ banding matters more than a fivefold file size. `git log` has the implementation
 **Alpha in any AV1-based output.** `VideoFrame` from a canvas is YUV. AVIF alpha requires a
 separate auxiliary track. WebP and APNG cover the transparency case.
 
-**`MediaRecorder` for the primary video path.** Real-time capture means a 4-second loop takes
-4 seconds per repetition, and frame timestamps come from the wall clock rather than the
-timeline. Both defeat the point of the tool.
+**`MediaRecorder` for any video path.** Real-time capture means a 4-second loop takes 4 seconds
+per repetition, and frame timestamps come from the wall clock rather than the timeline. Both
+defeat the point of the tool.
+
+This entry used to say "for the *primary* video path", leaving it open as a fallback. #59
+measured the fallback and #84 removed it: the timestamps are not merely approximate, they are a
+uniform resample at the capture rate — irregular boundaries of 100/48/52/96/30 ms came back flat
+at ~67 ms. It remains only as the repair for a mux whose own output will not play, where the
+alternative is no file at all. See section 3.

@@ -35,13 +35,10 @@ test("capability probing yields a usable format list", async ({ page }) => {
     expect(f.kind).toBeTruthy();
   }
 
-  // MediaRecorder is a fallback, not a path: it may only appear when no
-  // VideoEncoder codec was found at all, and must say so in its label.
-  const recorders = formats.filter((f) => f.recorder);
-  if (recorders.length) {
-    expect(formats.filter((f) => !f.recorder && f.kind !== "gif").length).toBe(0);
-    for (const r of recorders) expect(r.label).toContain("real time");
-  }
+  // MediaRecorder is not offered at all since #59. It survives only as the
+  // repair for a coded mux that fails its own verification, which is not a
+  // format and never reaches this list.
+  expect(formats.filter((f) => f.recorder)).toEqual([]);
 
   // The selected default should be the best available, not merely the first.
   const selected = await page.evaluate(() => document.querySelector("#fmt").value);

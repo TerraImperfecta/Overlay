@@ -97,7 +97,7 @@ async function waitForServer(url, timeoutMs = 10000) {
       const g = geometry();
       return {
         browser: navigator.userAgent,
-        formats: FORMATS.map((f) => ({ id: f.id, ext: f.ext, kind: f.kind, recorder: !!f.recorder })),
+        formats: FORMATS.map((f) => ({ id: f.id, ext: f.ext, kind: f.kind })),
         W: Math.max(2, Math.round(g.w * S.outScale) & ~1),
         H: Math.max(2, Math.round(g.h * S.outScale) & ~1),
         plan: {
@@ -117,16 +117,6 @@ async function waitForServer(url, timeoutMs = 10000) {
 
     const written = [];
     for (const fmt of setup.formats) {
-      // The MediaRecorder fallback runs in real time and produces wall-clock
-      // timestamps rather than the timeline's -- it is explicitly not a path
-      // whose timing is meant to match plan.delaysMs, so validating it here
-      // would be testing something nobody claims.
-      if (fmt.recorder) {
-        console.log(`${fmt.id.padEnd(10)} skipped (MediaRecorder fallback, real-time by design)`);
-        written.push({ ...fmt, skipped: "MediaRecorder fallback" });
-        continue;
-      }
-
       const res = await page.evaluate(async (id) => {
         const f = FORMATS.find((x) => x.id === id);
         const plan = S.plan, g = geometry();
