@@ -1,11 +1,11 @@
 import { $ } from "./util.js";
-import { S } from "./11a-state.js";
-import { layerPos, setLayerPos } from "./11b-geometry.js";
-import { announcePosition, syncLayerControls, syncPlacementFields } from "./11e-controls.js";
-import { replan } from "./11g-plan.js";
+import { announcePosition, syncLayerControls, syncPlacementFields } from "./controls.js";
+import { layerPos, setLayerPos } from "./geometry.js";
+import { replan } from "./plan.js";
+import { S } from "./state.js";
 
 /* =====================================================================
-   11d. PLACEMENT HISTORY
+   PLACEMENT HISTORY
    ---------------------------------------------------------------------
    Undo and redo, for placement only (#62). Every way a layer can move --
    the drag, the arrows, a typed coordinate -- funnels through

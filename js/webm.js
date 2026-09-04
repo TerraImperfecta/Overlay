@@ -1,7 +1,7 @@
-import { U8A, cat } from "./07-isobmff.js";
+import { U8A, cat } from "./isobmff.js";
 
 /* =====================================================================
-   8. EBML MUXER  →  WebM
+   EBML MUXER  →  WebM
    ===================================================================== */
 export function ebmlSize(n){
   for (let len=1; len<=8; len++){

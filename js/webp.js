@@ -1,7 +1,7 @@
-import { BW } from "./04-gif-encoder.js";
+import { BW } from "./gif-encoder.js";
 
 /* =====================================================================
-   5. ANIMATED WEBP  (still WebPs remuxed into ANMF chunks)
+   ANIMATED WEBP  (still WebPs remuxed into ANMF chunks)
    ===================================================================== */
 export function riffChunks(u8){
   const out = []; let p = 12;

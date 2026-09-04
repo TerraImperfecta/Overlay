@@ -1,10 +1,10 @@
 import { $ } from "./util.js";
-import { el } from "./08-webm.js";
-import { S, stage } from "./11a-state.js";
-import { layerPos } from "./11b-geometry.js";
+import { layerPos } from "./geometry.js";
+import { S, stage } from "./state.js";
+import { el } from "./webm.js";
 
 /* =====================================================================
-   11e. CONTROLS AND ANNOUNCEMENTS
+   CONTROLS AND ANNOUNCEMENTS
    ---------------------------------------------------------------------
    Pushing state back out into the controls that display it, and saying
    what changed for anyone not looking at the screen. Called from wherever

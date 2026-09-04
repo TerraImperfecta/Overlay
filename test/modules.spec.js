@@ -6,7 +6,7 @@
 //
 //   * assigning an imported binding is a TypeError, but only on the line that
 //     does it. #78 moved six render flags behind named transitions for this
-//     reason; splitting section 11 immediately reintroduced it with
+//     reason; splitting the old 11-app.js immediately reintroduced it with
 //     queuedReplan, and the only symptom was two unrelated tests failing.
 //   * a cycle resolves fine when everything in it is a hoisted function and
 //     throws when it is not. #78 had two, both of them a lower layer reaching
@@ -100,4 +100,24 @@ test("every module is reachable from the entry", () => {
   // A file nobody imports and the entry does not re-export is dead weight that
   // still ships, and no test would notice it had stopped being loaded.
   expect(FILES.filter((f) => !seen.has(f))).toEqual([]);
+});
+
+test("every module the docs name actually exists", () => {
+  // Worth having only since #86 dropped the numeric prefixes: the docs used to
+  // say "section 7", which nothing could check and which silently stopped
+  // meaning anything the moment section 11 became seven files. A file name can
+  // be verified.
+  const roots = { js: DIR, test: __dirname, ".": path.join(__dirname, "..") };
+  const exists = (name) =>
+    Object.values(roots).some((d) => fs.existsSync(path.join(d, name)));
+
+  const broken = [];
+  for (const doc of ["PLAN.md", "README.md", "corpus/README.md"]) {
+    const text = fs.readFileSync(path.join(__dirname, "..", doc), "utf8");
+    for (const m of text.matchAll(/`((?:[\w.\/-]+\/)?[\w.-]+\.js)`/g)) {
+      const name = m[1].replace(/^(?:js|test)\//, "");
+      if (!exists(name)) broken.push(`${doc}: ${m[1]}`);
+    }
+  }
+  expect(broken).toEqual([]);
 });

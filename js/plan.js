@@ -1,11 +1,11 @@
 import { $, esc } from "./util.js";
-import { lcm, planTimeline } from "./03-timeline.js";
-import { S, busy } from "./11a-state.js";
-import { geometry } from "./11b-geometry.js";
-import { syncPlacementFields, updateStageLabel } from "./11e-controls.js";
+import { syncPlacementFields, updateStageLabel } from "./controls.js";
+import { geometry } from "./geometry.js";
+import { S, busy } from "./state.js";
+import { lcm, planTimeline } from "./timeline.js";
 
 /* =====================================================================
-   11g. THE PLAN
+   THE PLAN
    ---------------------------------------------------------------------
    Turning two sources into one merged timeline, and reporting what that
    merge did. Deferred while a render is running, so the render finishes

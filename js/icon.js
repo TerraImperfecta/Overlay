@@ -1,5 +1,5 @@
 /* =====================================================================
-   0. ICON — the apple-touch-icon, rasterised from the header mark
+   ICON — the apple-touch-icon, rasterised from the header mark
    ===================================================================== */
 
 /* iOS wants a PNG for a home-screen bookmark, and this draws one from the same
