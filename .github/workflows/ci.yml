@@ -24,7 +24,16 @@ jobs:
           node-version: 22
           cache: npm
 
-      - run: npm ci
+      # setup-node has already restored ~/.npm, so the three packages in the
+      # lockfile need no network at all. Left to itself npm contacts the
+      # registry anyway -- to revalidate and to run the audit -- and from the
+      # hosted runners that link is wildly unreliable: the same three packages
+      # have taken 30s, 3m, 5m and 7m, and the two seven-minute installs gave up
+      # on the audit without printing it. That variance was the whole of CI's
+      # variance; every other step held steady. --prefer-offline spends the
+      # cache we already paid for and --no-audit drops the round trip that
+      # stalls, neither of which changes what gets installed.
+      - run: npm ci --prefer-offline --no-audit --fund=false
 
       # Chromium runs everything: it is where ImageDecoder and WebCodecs are
       # complete enough to be an oracle for exact decoder output. Firefox runs
@@ -62,7 +71,16 @@ jobs:
           node-version: 22
           cache: npm
 
-      - run: npm ci
+      # setup-node has already restored ~/.npm, so the three packages in the
+      # lockfile need no network at all. Left to itself npm contacts the
+      # registry anyway -- to revalidate and to run the audit -- and from the
+      # hosted runners that link is wildly unreliable: the same three packages
+      # have taken 30s, 3m, 5m and 7m, and the two seven-minute installs gave up
+      # on the audit without printing it. That variance was the whole of CI's
+      # variance; every other step held steady. --prefer-offline spends the
+      # cache we already paid for and --no-audit drops the round trip that
+      # stalls, neither of which changes what gets installed.
+      - run: npm ci --prefer-offline --no-audit --fund=false
 
       - run: npx playwright install webkit
 
