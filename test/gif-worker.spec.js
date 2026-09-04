@@ -93,7 +93,8 @@ test("progress is still reported from inside the worker", async ({ page }) => {
     return (await exportOnce()).said;
   }, EXPORT);
 
-  // Compositing stays on the main thread; the rest now arrives as messages.
+  // Compositing moved across too in #63, so this now arrives as a message like
+  // the rest of them rather than being said on the way in.
   expect(said.some((t) => t.startsWith("Compositing"))).toBe(true);
   expect(said).toContain("Building palette");
   expect(said.some((t) => t.startsWith("Encoding"))).toBe(true);
@@ -138,7 +139,11 @@ test("the worker source carries every function it needs", async ({ page }) => {
     const src = gifWorkerSource();
     return {
       has: ["class BW", "function buildPalette", "function lzwEncode",
-            "function encodeGIF", "async function gifFromFrames", "self.onmessage"]
+            "function encodeGIF", "async function gifFromFrames", "self.onmessage",
+            // Compositing runs there too since #63, and must be the same
+            // functions the preview draws with rather than a second copy.
+            "function frameAt", "function layerBox", "function composite",
+            "function renderContext", "function compositeInto"]
             .filter((n) => src.includes(n)),
       // Nothing from the page may leak in: the worker has no S, no DOM, and a
       // reference to either would only fail at run time, on a large export.
@@ -147,6 +152,73 @@ test("the worker source carries every function it needs", async ({ page }) => {
     };
   });
 
-  expect(r.has).toHaveLength(6);
+  expect(r.has).toHaveLength(11);
   expect(r.leaks).toEqual([]);
+});
+
+test("with a worker, this thread does not composite at all", async ({ page }) => {
+  // The point of #63: 82% of the export's main-thread work was the compositing
+  // loop. Byte equality alone would still pass if the frames were quietly being
+  // drawn here and sent across, which is the shape a bad merge would take.
+  await setup(page);
+  const r = await page.evaluate(async (helper) => {
+    eval(helper);
+    const real = window.makeRenderCanvas;
+    let here = 0;
+    window.makeRenderCanvas = (...a) => { here++; return real(...a); };
+    try {
+      const withWorker = await exportOnce();
+      const usedWorker = here;
+
+      const RealWorker = window.Worker;
+      here = 0;
+      let withoutWorker;
+      try { delete window.Worker; withoutWorker = await exportOnce(); }
+      finally { window.Worker = RealWorker; }
+      return { usedWorker, withoutWorker: here,
+               sameBytes: withWorker.hash === withoutWorker.hash };
+    } finally { window.makeRenderCanvas = real; }
+  }, EXPORT);
+
+  expect(r.usedWorker).toBe(0);
+  // And the fallback still does composite here, or there would be nothing to
+  // fall back to.
+  expect(r.withoutWorker).toBeGreaterThan(0);
+  expect(r.sameBytes).toBe(true);
+});
+
+test("an export leaves the preview's frames usable", async ({ page }) => {
+  // The crux #63 named. An ImageBitmap transferred to a worker is gone from
+  // this thread, and the preview draws from these same bitmaps every frame
+  // while disposeSource owns them (#26) -- so the worker is given clones. If
+  // that ever becomes a transfer, the preview goes black mid-export and the
+  // only symptom is a drawImage that throws.
+  await setup(page);
+  const r = await page.evaluate(async (helper) => {
+    eval(helper);
+    const bitmaps = S.src.flatMap((s) => s.frames.map((f) => f.bitmap));
+    const widthsBefore = bitmaps.map((b) => b.width);
+    await exportOnce();
+
+    const widthsAfter = bitmaps.map((b) => b.width);
+    let drew = true, err = null;
+    try {
+      const c = new OffscreenCanvas(8, 8);
+      for (const b of bitmaps) c.getContext("2d").drawImage(b, 0, 0);
+    } catch (e) { drew = false; err = e.message; }
+
+    // And the preview itself still produces pixels.
+    const g = geometry();
+    const c = new OffscreenCanvas(g.w, g.h);
+    compositeInto(c.getContext("2d"), g.w, g.h, g, 1, false, renderView(S.plan));
+    const px = c.getContext("2d").getImageData(0, 0, g.w, g.h).data;
+    return { widthsBefore, widthsAfter, drew, err,
+             anyPainted: px.some((v) => v !== 0) };
+  }, EXPORT);
+
+  // A detached bitmap reports width 0 and throws when drawn.
+  expect(r.widthsAfter).toEqual(r.widthsBefore);
+  expect(r.widthsAfter.every((w) => w > 0)).toBe(true);
+  expect(r.drew, `drawing after the export threw: ${r.err}`).toBe(true);
+  expect(r.anyPainted).toBe(true);
 });

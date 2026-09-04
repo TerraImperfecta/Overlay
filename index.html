@@ -853,12 +853,40 @@ async function gifFromFrames(job, report){
    file; if a build step ever lands, this can become a real module. */
 let gifWorkerURL = null;
 function gifWorkerSource(){
-  return [BW, buildPalette, lzwEncode, encodeGIF, gifFromFrames]
+  /* frameAt, layerBox, composite, renderContext and compositeInto are the same
+     functions the preview runs, carried across as source rather than rewritten.
+     Two implementations of compositing is the trap #29 avoided for quantization
+     and there is no reason to fall into it here.
+
+     composite() and layerBox() read `view || S`, and there is no S in a worker;
+     the job always carries a view, so that branch is never taken. */
+  return [BW, buildPalette, lzwEncode, encodeGIF, gifFromFrames,
+          frameAt, layerBox, composite, renderContext, compositeInto]
     .map(fn => fn.toString()).join("\n\n") + `
+
+/* The compositing loop, which used to run on the main thread. It is the whole
+   of the block that #29 left behind -- 44 of the 55 ms it took at 768 square,
+   measured in #72 -- and the frames it produces are what gifFromFrames wants. */
+function compositeFrames(job, progress){
+  const {W, H, g, count, times, view} = job;
+  const cx = renderContext(new OffscreenCanvas(W, H), false);
+  const rgba = [];
+  for (let i = 0; i < count; i++){
+    compositeInto(cx, W, H, g, times[i] + 1, false, view);
+    rgba.push(cx.getImageData(0, 0, W, H).data);
+    if (i % 8 === 0) progress("Compositing " + (i+1) + "/" + count);
+  }
+  return rgba;
+}
 
 self.onmessage = async e => {
   try {
-    const out = await gifFromFrames(e.data, text => self.postMessage({type:"progress", text}));
+    const job = e.data;
+    const progress = text => self.postMessage({type:"progress", text});
+    /* A job that already carries frames was composited by the caller, which is
+       what the main-thread fallback does. */
+    if (!job.rgba) job.rgba = compositeFrames(job, progress);
+    const out = await gifFromFrames(job, progress);
     self.postMessage({type:"done", bytes: out.bytes, palette: out.palette}, [out.bytes.buffer]);
   } catch (err){
     self.postMessage({type:"error", message: (err && err.message) || String(err)});
@@ -877,9 +905,10 @@ function makeGifWorker(){
   } catch { return null; }
 }
 
-/* Runs the job in `worker`, relaying progress and honouring Cancel. The rgba
+/* Runs the job in `worker`, relaying progress and honouring Cancel. Any rgba
    buffers are transferred, not copied -- they are several megabytes at the
-   sizes where this matters, and nothing needs them afterwards. */
+   sizes where this matters, and nothing needs them afterwards. The ImageBitmaps
+   in a view are the exception and are cloned; see workerView. */
 function runGifWorker(worker, job, say){
   return new Promise((resolve, reject) => {
     worker.onmessage = e => {
@@ -893,7 +922,7 @@ function runGifWorker(worker, job, say){
       else reject(new Error(m.message || "The GIF worker failed."));
     };
     worker.onerror = e => reject(new Error(e.message || "The GIF worker failed to run."));
-    worker.postMessage(job, job.rgba.map(a => a.buffer));
+    worker.postMessage(job, job.rgba ? job.rgba.map(a => a.buffer) : []);
   });
 }
 
@@ -1713,13 +1742,52 @@ function renderView(plan){
           place: S.place.map(p => ({...p}))};
 }
 
+/* Shared with the worker, which builds an OffscreenCanvas instead of an
+   element but must configure it identically -- the two are required to produce
+   the same bytes, and imageSmoothingEnabled or the alpha flag differing between
+   them would show up as a quiet difference in the output rather than an error.
+   Works on either kind of canvas. */
+function renderContext(canvas, opaque){
+  const cx = canvas.getContext("2d", {willReadFrequently:true, alpha:!opaque});
+  cx.imageSmoothingEnabled = true;
+  return cx;
+}
+
+/* The scale from output pixels to the geometry composite() draws in. Shared for
+   the same reason: the preview, the main-thread export and the worker all have
+   to place a layer in the same place. */
+function compositeInto(cx, W, H, g, t, opaque, view){
+  cx.save();
+  cx.scale(W/g.w, H/g.h);
+  composite(cx, g.w, g.h, t, g.dx, g.dy, opaque, view);
+  cx.restore();
+}
+
 function makeRenderCanvas(W, H, g, opaque, view){
   const c = document.createElement("canvas"); c.width = W; c.height = H;
-  const cx = c.getContext("2d", {willReadFrequently:true, alpha:!opaque});
-  cx.imageSmoothingEnabled = true;
-  const sx = W/g.w, sy = H/g.h;
-  return { c, cx, at(t){ cx.save(); cx.scale(sx, sy);
-    composite(cx, g.w, g.h, t, g.dx, g.dy, opaque, view); cx.restore(); } };
+  const cx = renderContext(c, opaque);
+  return { c, cx, at(t){ compositeInto(cx, W, H, g, t, opaque, view); } };
+}
+
+/* What composite() needs, reduced to things structured clone can carry. The
+   ImageBitmaps are deliberately *not* transferred: the preview draws from those
+   same bitmaps every frame and disposeSource owns them (#26), so the worker
+   gets clones and the main thread keeps what it had. That copy is the price of
+   this whole change, and it is transient -- the clones die with the worker. */
+function workerView(view){
+  return {
+    bg: view.bg, bgColor: view.bgColor, blend: view.blend,
+    opacity: view.opacity, canvasMode: view.canvasMode,
+    place: view.place.map(p => ({...p})),
+    /* Only kA and kB are read, and a whole plan would drag its frame arrays
+       across for nothing. */
+    plan: {kA: view.plan.kA, kB: view.plan.kB},
+    src: view.src.map(s => s && {
+      width: s.width, height: s.height, starts: s.starts,
+      duration: s.duration, static: s.static,
+      frames: s.frames.map(f => ({bitmap: f.bitmap})),
+    }),
+  };
 }
 
 let busy = false;      // set for the whole of a render, cleared in its finally
@@ -1949,25 +2017,33 @@ async function render(){
 }
 
 async function exportGIF(W,H,g,plan,say,view){
-  const R = makeRenderCanvas(W,H,g,false,view);
-  const rgba = [];
-  for (let i=0;i<plan.count;i++){
-    R.at(plan.times[i]+1);
-    rgba.push(R.cx.getImageData(0,0,W,H).data);
-    if (i%8===0){ say(`Compositing ${i+1}/${plan.count}`); await breathe(); }
-  }
-  const job = {W, H, count: plan.count, delaysCs: Array.from(plan.delaysCs),
-               needsAlpha: view ? view.bg === "transparent" : S.bg === "transparent", rgba};
+  /* The view was optional, and composite() fell back to reading S live. There
+     is no S in a worker, so one is taken here instead -- which is also what #27
+     wants of a render: a snapshot nothing the user does can change halfway. */
+  const v = view || renderView(plan);
+  const job = {W, H, g, count: plan.count, times: Array.from(plan.times),
+               delaysCs: Array.from(plan.delaysCs),
+               needsAlpha: v.bg === "transparent"};
 
-  /* The worker is created before anything is transferred, so that failing to
-     start still leaves the buffers intact for the fallback below. */
+  /* Compositing goes across too now, not just the encode. It was 81% of the
+     loop and the loop was 83% of the block the user actually feels (#63, #72),
+     so leaving it here would have left most of the freeze behind. */
   const worker = makeGifWorker();
   let out;
   if (worker){
-    try { out = await runGifWorker(worker, job, say); }
+    try { out = await runGifWorker(worker, {...job, view: workerView(v)}, say); }
     finally { worker.terminate(); }
   } else {
-    out = await gifFromFrames(job, async text => { say(text); await breathe(); });
+    /* No worker: the same functions, on this thread, pausing often enough to
+       keep the page answering. */
+    const R = makeRenderCanvas(W,H,g,false,v);
+    const rgba = [];
+    for (let i=0;i<plan.count;i++){
+      R.at(plan.times[i]+1);
+      rgba.push(R.cx.getImageData(0,0,W,H).data);
+      if (i%8===0){ say(`Compositing ${i+1}/${plan.count}`); await breathe(); }
+    }
+    out = await gifFromFrames({...job, rgba}, async text => { say(text); await breathe(); });
   }
   /* Which palette path ran is only knowable in here, and the readout wants it. */
   lastGifPalette = out.palette;
