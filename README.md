@@ -43,6 +43,16 @@ output format to `out/`, alongside the plan they were meant to encode. Add
 and `stts` run-length compression. `test/inspect_container.py` then reads per-frame
 timing straight out of an MP4 or WebM.
 
+That parser is ours, so it corroborates rather than confirms. `test/validate_containers.py`
+reads the same files with FFmpeg's own demuxer — what `ffprobe` is a thin CLI over — and
+checks every timestamp against the plan they were exported from:
+
+```
+python3 -m venv .venv && .venv/bin/pip install av   # PyAV ships libavformat
+npm run fixtures && npm run fixtures -- --stress
+.venv/bin/python test/validate_containers.py
+```
+
 `js/` is one file per numbered section, 0–13, named for what it holds: icon, GIF decoder,
 source loader, timeline merge, GIF quantizer/encoder, WebP muxer, APNG muxer, ISOBMFF muxer
 (MP4 + AVIF), EBML muxer (WebM), WebCodecs driver, format registry, app state and compositing,
