@@ -10,7 +10,7 @@
 // minimum gap, uniform resampling only past the frame budget -- are checked
 // alongside it, because they are what the mode choice feeds.
 
-const { test, expect } = require("@playwright/test");
+const { test, expect } = require("./fixtures");
 
 const HELPERS = `
 // n frames of equal delay spanning durationMs; n === 1 is a still, which

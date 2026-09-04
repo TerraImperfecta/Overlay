@@ -15,7 +15,7 @@
 // both" the canvas origin moves when the overlay does, so a typed 0 would not
 // read back as 0. The last test here is that distinction.
 
-const { test, expect } = require("@playwright/test");
+const { test, expect } = require("./fixtures");
 
 const HELPERS = `
 async function li(i, n){

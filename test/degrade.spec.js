@@ -20,7 +20,7 @@
 // reason to move it is the stronger one: Safari exists only on Apple platforms,
 // so a Linux WebKit result would be weak evidence about Safari even if it ran.
 
-const { test, expect } = require("@playwright/test");
+const { test, expect } = require("./fixtures");
 
 async function capabilities(page) {
   return page.evaluate(async () => {

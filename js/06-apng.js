@@ -1,17 +1,17 @@
-"use strict";
+import { BW } from "./04-gif-encoder.js";
 
 /* =====================================================================
    6. APNG  (still PNGs remuxed into fcTL/fdAT frames)
    ===================================================================== */
-const CRC_T = (() => { const t = new Uint32Array(256);
+export const CRC_T = (() => { const t = new Uint32Array(256);
   for (let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c = c&1 ? 0xEDB88320^(c>>>1) : c>>>1;
     t[n]=c>>>0; } return t; })();
-function crc32(buf,start,end){
+export function crc32(buf,start,end){
   let c = 0xFFFFFFFF;
   for (let i=start;i<end;i++) c = CRC_T[(c ^ buf[i]) & 255] ^ (c>>>8);
   return (c ^ 0xFFFFFFFF)>>>0;
 }
-function pngChunks(u8){
+export function pngChunks(u8){
   const out = []; let p = 8;
   while (p+8 <= u8.length){
     const len = (u8[p]<<24|u8[p+1]<<16|u8[p+2]<<8|u8[p+3])>>>0;
@@ -20,7 +20,7 @@ function pngChunks(u8){
   }
   return out;
 }
-function muxAPNG(stills, delaysMs, W, H){
+export function muxAPNG(stills, delaysMs, W, H){
   const first = pngChunks(stills[0]);
   const ihdr = first.find(c => c.type === "IHDR");
   if (!ihdr) throw new Error("Unexpected PNG layout.");

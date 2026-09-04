@@ -3,7 +3,7 @@
 // narrower browser rather than offer something that throws on use, so the
 // assertions here are about shape, not about a fixed list of formats.
 
-const { test, expect } = require("@playwright/test");
+const { test, expect } = require("./fixtures");
 
 test("the page loads without console errors or unhandled rejections", async ({ page }) => {
   const problems = [];
@@ -57,69 +57,45 @@ test("the icon rasterises without leaving the page broken", async ({ page }) => 
   expect(linked).toBe(true);
 });
 
-// --- the split into files (#75) --------------------------------------------
+// --- the split into files (#75), now as modules (#78) ---------------------
 //
-// The tool was one file until #75. Splitting it introduced two failures that a
-// single file could not have: a script the page asks for and does not get, and
-// scripts that arrive in the wrong order. Neither is loud. A 404 on one file
-// leaves the others running and only breaks whatever needed that one, which may
-// be a format nothing on this page touches until you export it.
+// The tool was one file until #75, then fifteen ordered <script> tags, and is
+// now a module graph behind a single entry. Each step changed what can go
+// wrong. Tag order was the fragility #75 had to guard; imports settle that, so
+// those tests are gone. What is left is a file the page asks for and does not
+// get -- still silent, because a failed import breaks only what needed it.
 
-test("every file the page asks for is served", async ({ page }) => {
-  const missing = [];
+test("every file the module graph pulls in is served", async ({ page }) => {
+  const failed = [], js = new Set();
   page.on("response", (r) => {
-    if (!r.ok()) missing.push(`${r.status()} ${new URL(r.url()).pathname}`);
+    const path = new URL(r.url()).pathname;
+    if (!r.ok()) failed.push(`${r.status()} ${path}`);
+    if (path.endsWith(".js")) js.add(path);
   });
 
   await page.goto("/index.html");
   await page.waitForFunction(() => document.querySelector("#fmt")?.options.length > 0);
 
-  const asked = await page.evaluate(() => ({
-    scripts: [...document.querySelectorAll("script[src]")].map((s) =>
-      new URL(s.src).pathname),
-    styles: [...document.querySelectorAll('link[rel="stylesheet"]')].map((l) =>
-      new URL(l.href).pathname),
-  }));
-
-  expect(missing).toEqual([]);
-  // A guard against the opposite mistake: a tag quietly dropped from the page
-  // would make this test pass by asking for nothing.
-  expect(asked.scripts.length).toBeGreaterThanOrEqual(15);
-  expect(asked.styles).toContain("/styles.css");
+  expect(failed).toEqual([]);
+  // The entry plus every section it reaches, so a module orphaned from the
+  // graph shows up as a file nobody fetched.
+  expect(js.has("/js/main.js")).toBe(true);
+  expect(js.size).toBeGreaterThanOrEqual(16);
 });
 
-test("the scripts leave one shared global scope behind", async ({ page }) => {
-  // Not decoration: gifWorkerSource() builds a worker by stringifying functions
-  // that have to resolve each other, and the suite reaches the code through
-  // these names. Modules would take both away.
-  await page.goto("/index.html");
-  await page.waitForFunction(() => document.querySelector("#fmt")?.options.length > 0);
-
-  const missing = await page.evaluate(() => {
-    const wanted = {
-      "util.js": ["$", "esc", "idle"],
-      "01 gif decoder": ["parseGIF", "flattenGIF", "lzwDecode"],
-      "02 source loader": ["loadSource", "disposeSource"],
-      "03 timeline": ["planTimeline"],
-      "04 gif encoder": ["buildPalette", "lzwEncode", "encodeGIF", "gifFromFrames"],
-      "07 isobmff": ["parseSequenceHeader", "Bits"],
-      "09 webcodecs": ["verifyBlob"],
-      "10 formats": ["FORMATS", "buildFormats"],
-      "11 app": ["S", "geometry", "layerBox", "composite", "renderView", "undo", "redo"],
-      "12 export": ["exportGIF", "gifWorkerSource", "makeGifWorker"],
-      "13 ui": ["replan", "render"],
-    };
-    const out = {};
-    for (const [where, names] of Object.entries(wanted)) {
-      const gone = names.filter((n) => {
-        try { return eval("typeof " + n) === "undefined"; } catch { return true; }
-      });
-      if (gone.length) out[where] = gone;
-    }
-    return out;
-  });
-
-  expect(missing).toEqual({});
+test("the app keeps its names to itself", async ({ browser }) => {
+  // A raw page, deliberately not the fixture's: the suite reaches the code by
+  // pulling the module namespace onto globalThis after each navigation, and
+  // that must stay a thing the tests do rather than a thing the app does.
+  const page = await browser.newPage();
+  try {
+    await page.goto("/index.html");
+    await page.waitForFunction(() => document.querySelector("#fmt")?.options.length > 0);
+    const leaked = await page.evaluate(() =>
+      ["S", "geometry", "parseGIF", "exportGIF", "buildPalette", "planTimeline",
+       "verifyBlob", "replan", "loadSource"].filter((n) => n in globalThis));
+    expect(leaked).toEqual([]);
+  } finally { await page.close(); }
 });
 
 test("styles arrive from the stylesheet, not from the markup", async ({ page }) => {

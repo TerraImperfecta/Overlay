@@ -1,13 +1,37 @@
-"use strict";
+import { $, esc, idle } from "./util.js";
+import { gifFromFrames, makeGifWorker, runGifWorker } from "./04-gif-encoder.js";
+import { anmfPayload, muxWebP } from "./05-webp.js";
+import { muxAPNG } from "./06-apng.js";
+import { av1ConfigRecord, box, muxISOBMFF } from "./07-isobmff.js";
+import { muxWebM } from "./08-webm.js";
+import { VERIFY_MIME, encodeWithVideoEncoder, verifyBlob } from "./09-webcodecs.js";
+import { currentFormat } from "./10-formats.js";
+import {
+  Cancelled,
+  S,
+  breathe,
+  busy,
+  cancelling,
+  geometry,
+  lastGifPalette,
+  loop,
+  makeRenderCanvas,
+  renderFinished,
+  renderStarted,
+  renderView,
+  replan,
+  setLastGifPalette,
+  takeQueuedReplan,
+  workerView
+} from "./11-app.js";
 
 /* =====================================================================
    12. EXPORT
    ===================================================================== */
-const currentFormat = () => FORMATS.find(f => f.id === $("#fmt").value) || FORMATS[0];
 
-async function render(){
+export async function render(){
   if (busy || !S.plan) return;
-  busy = true; cancelling = false; lastGifPalette = null;
+  renderStarted();
   const btn = $("#render"), out = $("#out"), stop = $("#cancel");
   btn.disabled = true; out.innerHTML = "";
   stop.hidden = false; stop.disabled = false; stop.textContent = "Cancel";
@@ -19,11 +43,7 @@ async function render(){
     const H = Math.max(2, Math.round(g.h*S.outScale) & ~1);
     let blob, warning = "";
 
-    if (fmt.kind === "gif")            blob = await exportGIF(W,H,g,plan,say,view);
-    else if (fmt.kind === "webp")      blob = await exportWebP(W,H,g,plan,say,view);
-    else if (fmt.kind === "apng")      blob = await exportAPNG(W,H,g,plan,say,view);
-    else if (fmt.kind === "recorder")  blob = await exportRecorder(fmt,W,H,g,plan,say,view);
-    else                               blob = await exportCoded(fmt,W,H,g,plan,say,view);
+    blob = await (EXPORTERS[fmt.kind] || EXPORTERS.coded)(fmt,W,H,g,plan,say,view);
 
     /* Every format is verified before it is offered, not just the coded ones.
        Real-time capture builds its own frame count from the wall clock, so
@@ -73,16 +93,16 @@ async function render(){
       ? `<div class="readout">Render cancelled.</div>`
       : `<div class="readout warn">Couldn't render: ${esc(e.message || e)}</div>`;
   } finally {
-    busy = false; cancelling = false;
+    renderFinished();
     $("#cancel").hidden = true;
     $("#render").disabled = false; $("#render").textContent = "Render";
     /* Cleared before the queued replan runs, so it is not deferred forever, and
        inside finally so a thrown render cannot leave the app permanently stuck. */
-    if (queuedReplan){ queuedReplan = false; replan(); }
+    if (takeQueuedReplan()) replan();
   }
 }
 
-async function exportGIF(W,H,g,plan,say,view){
+export async function exportGIF(W,H,g,plan,say,view){
   /* The view was optional, and composite() fell back to reading S live. There
      is no S in a worker, so one is taken here instead -- which is also what #27
      wants of a render: a snapshot nothing the user does can change halfway. */
@@ -112,11 +132,11 @@ async function exportGIF(W,H,g,plan,say,view){
     out = await gifFromFrames({...job, rgba}, async text => { say(text); await breathe(); });
   }
   /* Which palette path ran is only knowable in here, and the readout wants it. */
-  lastGifPalette = out.palette;
+  setLastGifPalette(out.palette);
   return new Blob([out.bytes], {type:"image/gif"});
 }
 
-async function exportWebP(W,H,g,plan,say,view){
+export async function exportWebP(W,H,g,plan,say,view){
   const R = makeRenderCanvas(W,H,g,false,view);
   const parts = []; let hasAlpha = false;
   for (let i=0;i<plan.count;i++){
@@ -132,7 +152,7 @@ async function exportWebP(W,H,g,plan,say,view){
   return new Blob([muxWebP(W,H,parts,hasAlpha)], {type:"image/webp"});
 }
 
-async function exportAPNG(W,H,g,plan,say,view){
+export async function exportAPNG(W,H,g,plan,say,view){
   const R = makeRenderCanvas(W,H,g,false,view);
   const stills = [];
   for (let i=0;i<plan.count;i++){
@@ -147,7 +167,7 @@ async function exportAPNG(W,H,g,plan,say,view){
   return new Blob([muxAPNG(stills, plan.delaysMs, W, H)], {type:"image/png"});
 }
 
-async function exportCoded(fmt, W, H, g, plan, say, view){
+export async function exportCoded(fmt, W, H, g, plan, say, view){
   const {samples, description} =
     await encodeWithVideoEncoder(fmt, W, H, plan, g, S.quality, say, view);
   say("Muxing"); await breathe(16);
@@ -165,7 +185,7 @@ async function exportCoded(fmt, W, H, g, plan, say, view){
   return new Blob([bytes], {type: fmt.avif ? "image/avif" : "video/mp4"});
 }
 
-async function exportRecorder(fmt, W, H, g, plan, say, view){
+export async function exportRecorder(fmt, W, H, g, plan, say, view){
   const R = makeRenderCanvas(W,H,g,true,view);
   const fps = Math.min(50, Math.max(10, Math.round(plan.count/(plan.outDur/1000))));
   const stream = R.c.captureStream(fps);
@@ -199,3 +219,15 @@ async function exportRecorder(fmt, W, H, g, plan, say, view){
   if (!chunks.length) throw new Error("The recorder produced no data.");
   return new Blob(chunks, {type: fmt.mime});
 }
+
+/* Dispatch by format, replacing a chain of ifs on fmt.kind. It is also the one
+   seam a test has to swap an encoder for a broken one: a module-local call
+   cannot be intercepted from outside, and reaching in to break the real muxer
+   is how "the user is told rather than handed a bad file" gets tested. */
+export const EXPORTERS = {
+  gif:      (fmt,W,H,g,plan,say,view) => exportGIF(W,H,g,plan,say,view),
+  webp:     (fmt,W,H,g,plan,say,view) => exportWebP(W,H,g,plan,say,view),
+  apng:     (fmt,W,H,g,plan,say,view) => exportAPNG(W,H,g,plan,say,view),
+  recorder: (fmt,W,H,g,plan,say,view) => exportRecorder(fmt,W,H,g,plan,say,view),
+  coded:    (fmt,W,H,g,plan,say,view) => exportCoded(fmt,W,H,g,plan,say,view),
+};

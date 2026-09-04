@@ -1,4 +1,4 @@
-"use strict";
+import { $ } from "./util.js";
 
 /* =====================================================================
    1. GIF DECODER
@@ -12,19 +12,19 @@
    These are policy caps rather than format limits: 16384 is the conventional
    canvas ceiling, and 64 megapixels keeps one decoded frame under a quarter of
    a gigabyte. Real GIFs are orders of magnitude below both. */
-const GIF_MAX_SIDE = 16384, GIF_MAX_PIXELS = 64e6;
+export const GIF_MAX_SIDE = 16384, GIF_MAX_PIXELS = 64e6;
 
 /* Walks the length-prefixed sub-block chain. The bound is the point: without
    `p < d.length`, a truncated file runs off the end, `d[p]` is undefined,
    `p += 1 + undefined` makes p NaN, `d[NaN]` is undefined, and the loop never
    terminates -- freezing the tab rather than reporting a bad file. */
-function skipBlocks(d,p){
+export function skipBlocks(d,p){
   while (p < d.length && d[p] !== 0) p += 1 + d[p];
   if (p >= d.length) throw new Error("That GIF ends in the middle of a block.");
   return p+1;
 }
 
-function lzwDecode(minCodeSize, data, pixelCount){
+export function lzwDecode(minCodeSize, data, pixelCount){
   const MAX = 4096, clear = 1 << minCodeSize, eoi = clear + 1;
   const out = new Uint8Array(pixelCount);
   const prefix = new Int32Array(MAX), suffix = new Uint8Array(MAX), stack = new Uint8Array(MAX+1);
@@ -52,13 +52,13 @@ function lzwDecode(minCodeSize, data, pixelCount){
   return out;
 }
 
-function deinterlace(px,w,h){
+export function deinterlace(px,w,h){
   const src = px.slice(), off=[0,4,2,1], jump=[8,8,4,2]; let row=0;
   for (let pass=0; pass<4; pass++)
     for (let y=off[pass]; y<h; y+=jump[pass]){ px.set(src.subarray(row*w,row*w+w), y*w); row++; }
 }
 
-function parseGIF(buffer){
+export function parseGIF(buffer){
   const d = new Uint8Array(buffer);
   if (String.fromCharCode(d[0],d[1],d[2]) !== "GIF") throw new Error("Not a GIF.");
   let p = 6;
@@ -107,9 +107,9 @@ function parseGIF(buffer){
   return {width, height, frames};
 }
 
-const realDelay = cs => { const ms = cs*10; return ms < 20 ? 100 : ms; };
+export const realDelay = cs => { const ms = cs*10; return ms < 20 ? 100 : ms; };
 
-function flattenGIF(gif){
+export function flattenGIF(gif){
   const W = gif.width, H = gif.height;
   const cur = new Uint8ClampedArray(W*H*4);
   const out = []; let saved = null;

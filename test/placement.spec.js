@@ -14,7 +14,7 @@
 // So scaling the base scales the output, and moving it slides the overlay
 // underneath rather than resizing anything.
 
-const { test, expect } = require("@playwright/test");
+const { test, expect } = require("./fixtures");
 
 const HELPERS = `
 async function two(baseW, baseH, overW, overH){

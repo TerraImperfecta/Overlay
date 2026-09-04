@@ -1,9 +1,18 @@
-"use strict";
+import { $ } from "./util.js";
+import { frameAt } from "./03-timeline.js";
+import {
+  Cancelled,
+  cancelling,
+  composite,
+  compositeInto,
+  layerBox,
+  renderContext
+} from "./11-app.js";
 
 /* =====================================================================
    4. GIF QUANTIZER + ENCODER
    ===================================================================== */
-function buildPalette(framesRGBA, reserve){
+export function buildPalette(framesRGBA, reserve){
   const cap = reserve ? 255 : 256;
   const exact = new Map(); let overflow = false;
   outer: for (const px of framesRGBA)
@@ -65,7 +74,7 @@ function buildPalette(framesRGBA, reserve){
   return {palette:pal, exact:null, lut, count};
 }
 
-class BW {
+export class BW {
   constructor(){ this.b = new Uint8Array(1<<16); this.n = 0; }
   need(k){ if (this.n+k > this.b.length){ let L=this.b.length; while(L<this.n+k) L*=2;
     const nb = new Uint8Array(L); nb.set(this.b.subarray(0,this.n)); this.b = nb; } }
@@ -81,7 +90,7 @@ class BW {
   done(){ return this.b.subarray(0,this.n); }
 }
 
-function lzwEncode(pixels, minCode){
+export function lzwEncode(pixels, minCode){
   const clear = 1<<minCode, eoi = clear+1;
   let codeSize = minCode+1, next = clear+2;
   const dict = new Map(), out = new BW();
@@ -105,7 +114,7 @@ function lzwEncode(pixels, minCode){
   return out.done();
 }
 
-function encodeGIF(W,H,palette,colorCount,frames,transparentIndex){
+export function encodeGIF(W,H,palette,colorCount,frames,transparentIndex){
   let bits = 1;
   while ((1<<bits) < Math.max(2, colorCount + (transparentIndex>=0?1:0))) bits++;
   bits = Math.min(8, bits);
@@ -134,7 +143,7 @@ function encodeGIF(W,H,palette,colorCount,frames,transparentIndex){
    reference to the page -- no S, no DOM -- because it is also the body of the
    worker below, stringified. `report` is awaited so the main-thread copy can
    yield between chunks; in the worker it just posts a message. */
-async function gifFromFrames(job, report){
+export async function gifFromFrames(job, report){
   const {W, H, count, delaysCs, needsAlpha, rgba} = job;
   await report("Building palette");
   const {palette, exact, lut, count: colorCount} = buildPalette(rgba, true);
@@ -172,8 +181,8 @@ async function gifFromFrames(job, report){
    out a second time, so there is exactly one implementation to keep correct.
    It is a Blob URL rather than a file because index.html still ships as one
    file; if a build step ever lands, this can become a real module. */
-let gifWorkerURL = null;
-function gifWorkerSource(){
+export let gifWorkerURL = null;
+export function gifWorkerSource(){
   /* frameAt, layerBox, composite, renderContext and compositeInto are the same
      functions the preview runs, carried across as source rather than rewritten.
      Two implementations of compositing is the trap #29 avoided for quantization
@@ -217,7 +226,7 @@ self.onmessage = async e => {
 
 /* Null when Workers are unavailable or refused, so the caller can fall back to
    running the same code on the main thread. */
-function makeGifWorker(){
+export function makeGifWorker(){
   if (typeof Worker === "undefined") return null;
   try {
     if (!gifWorkerURL)
@@ -230,7 +239,7 @@ function makeGifWorker(){
    buffers are transferred, not copied -- they are several megabytes at the
    sizes where this matters, and nothing needs them afterwards. The ImageBitmaps
    in a view are the exception and are cloned; see workerView. */
-function runGifWorker(worker, job, say){
+export function runGifWorker(worker, job, say){
   return new Promise((resolve, reject) => {
     worker.onmessage = e => {
       const m = e.data;

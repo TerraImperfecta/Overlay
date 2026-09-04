@@ -1,9 +1,33 @@
-"use strict";
+import { $, esc } from "./util.js";
+import { loadSource } from "./02-source-loader.js";
+import { FORMATS, buildFormats, onFormat } from "./10-formats.js";
+import {
+  S,
+  announcePosition,
+  beginChange,
+  busy,
+  endChange,
+  loop,
+  nudge,
+  placementChanged,
+  redo,
+  replan,
+  requestCancel,
+  resetZoom,
+  setLayerPos,
+  stage,
+  stepZoom,
+  syncLayerControls,
+  togglePlay,
+  undo,
+  updateHistoryButtons
+} from "./11-app.js";
+import { render } from "./12-export.js";
 
 /* =====================================================================
    13. UI WIRING
    ===================================================================== */
-function renderSlot(i, statusText, isError){
+export function renderSlot(i, statusText, isError){
   const slot = document.querySelector(`.slot[data-i="${i}"]`);
   const s = S.src[i];
   const label = `<span class="lbl">${i ? "Overlay" : "Base"}</span>`;
@@ -15,7 +39,7 @@ function renderSlot(i, statusText, isError){
     : `<span class="hint">Drop a GIF, WebP, AVIF, APNG or video</span>${meta}`);
 }
 
-function disposeSource(i){
+export function disposeSource(i){
   const s = S.src[i];
   if (!s) return;
   if (s.thumb && s.thumb.startsWith("blob:")) URL.revokeObjectURL(s.thumb);
@@ -23,8 +47,8 @@ function disposeSource(i){
   S.src[i] = null;
 }
 
-const loading = [false, false];
-async function accept(i, file){
+export const loading = [false, false];
+export async function accept(i, file){
   if (loading[i]) return;
   /* disposeSource() closes the previous source's ImageBitmaps. Doing that while
      a render is drawing from them throws mid-encode, so this one is refused
@@ -80,9 +104,9 @@ document.querySelectorAll(".slot").forEach(slot => {
    Every read and write is wrapped: a private window or a browser set to
    block site data can *throw* on access rather than returning null, and a
    stored preference must never be able to stop the app starting. */
-const SETTINGS_KEY = "overlay.settings.v1";
+export const SETTINGS_KEY = "overlay.settings.v1";
 
-function writeSettings(){
+export function writeSettings(){
   try {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify({
       format: $("#fmt").value, quality: S.quality, outScale: S.outScale,
@@ -94,7 +118,7 @@ function writeSettings(){
 /* Anything read back is treated as hostile: it may be from an older version,
    hand-edited, or corrupt. Each field is validated on its own, so one bad
    value costs that setting rather than all of them. */
-function readSettings(){
+export function readSettings(){
   let raw = null;
   try { raw = localStorage.getItem(SETTINGS_KEY); } catch { return {}; }
   let stored;
@@ -120,12 +144,12 @@ function readSettings(){
 
 /* Both halves of a segmented control, so a restored value looks selected
    rather than merely being selected. */
-function setSeg(aId, bId, useA){
+export function setSeg(aId, bId, useA){
   $(aId).setAttribute("aria-pressed", useA ? "true" : "false");
   $(bId).setAttribute("aria-pressed", useA ? "false" : "true");
 }
 
-function applySettings(st){
+export function applySettings(st){
   if (st.quality  !== undefined){ S.quality  = st.quality;
     $("#q").value = Math.round(st.quality*100); $("#qv").textContent = $("#q").value; }
   if (st.outScale !== undefined){ S.outScale = st.outScale;
@@ -140,14 +164,14 @@ function applySettings(st){
 /* Only after buildFormats(), and only if this browser can actually produce it.
    A format that is no longer on offer falls back to whatever buildFormats
    chose, rather than selecting an option that is not there. */
-function applyStoredFormat(id){
+export function applyStoredFormat(id){
   if (!id || !FORMATS.some(f => f.id === id)) return false;
   $("#fmt").value = id;
   onFormat();
   return true;
 }
 
-const bind = (id,ev,fn) => $(id).addEventListener(ev,fn);
+export const bind = (id,ev,fn) => $(id).addEventListener(ev,fn);
 bind("#sync","change", e => { S.sync = e.target.value; replan(); writeSettings(); });
 bind("#maxf","input", e => { S.maxFrames = +e.target.value;
   $("#maxfv").textContent = S.maxFrames+" max"; replan(); });
@@ -165,15 +189,8 @@ bind("#loops","input", e => S.loops = Math.max(1, Math.min(20, +e.target.value |
 bind("#bgColor","input", e => { S.bgColor = e.target.value; writeSettings(); });
 bind("#fmt","change", () => { onFormat(); writeSettings(); });
 
-function onFormat(){
-  const f = currentFormat(); if (!f) return;
-  $("#fmtNote").textContent = f.note;
-  $("#qualityCtl").hidden = !f.quality;
-  $("#loopsCtl").hidden = !f.recorder;
-  $("#render").textContent = "Render";
-}
 
-function seg(aId,bId,aVal,bVal,set){
+export function seg(aId,bId,aVal,bVal,set){
   const a = $(aId), b = $(bId);
   a.onclick = () => { a.setAttribute("aria-pressed","true"); b.setAttribute("aria-pressed","false"); set(aVal); };
   b.onclick = () => { b.setAttribute("aria-pressed","true"); a.setAttribute("aria-pressed","false"); set(bVal); };
@@ -183,14 +200,6 @@ seg("#cvBase","#cvFit","base","fit", v => { S.canvasMode = v; replan(); });
    the value it is about to change rather than the previous layer's. */
 seg("#lyBase","#lyOver", 0, 1, i => { S.sel = i; syncLayerControls(); });
 
-/* Also called by an undo, which can restore a different layer's selection than
-   the one the controls are currently showing. */
-function syncLayerControls(){
-  $("#lyBase").setAttribute("aria-pressed", S.sel === 0 ? "true" : "false");
-  $("#lyOver").setAttribute("aria-pressed", S.sel === 1 ? "true" : "false");
-  const pct = Math.round(S.place[S.sel].scale*100);
-  $("#sc").value = pct; $("#scv").textContent = pct + "%";
-}
 seg("#bgT","#bgC","transparent","solid", v => { S.bg = v; writeSettings(); });
 
 bind("#swap","click", () => { S.src.reverse(); renderSlot(0); renderSlot(1); replan(); });
@@ -202,18 +211,15 @@ bind("#center","click", () => {
 bind("#render","click", render);
 bind("#cancel","click", () => {
   if (!busy) return;
-  cancelling = true;
+  requestCancel();
   const stop = $("#cancel");
   stop.disabled = true; stop.textContent = "Stopping…";
 });
 bind("#play","click", e => {
-  if (S.playing) pausedAt = (performance.now()-S.t0) % (S.plan ? S.plan.outDur : 1000);
-  else S.t0 = performance.now() - pausedAt;
-  S.playing = !S.playing;
-  e.target.textContent = S.playing ? "Pause" : "Play";
+  e.target.textContent = togglePlay() ? "Pause" : "Play";
 });
 
-let dragging = false, last = null;
+export let dragging = false, last = null;
 stage.addEventListener("pointerdown", e => {
   /* The base alone can be moved now, so a second source is no longer required. */
   if (!S.src[S.sel]) return;
@@ -242,7 +248,7 @@ stage.addEventListener("pointerup", () => {
 /* The drag handler was the only way to set a position, so without this a
    keyboard user could reach every control on the page and then not do the one
    thing the tool is for. */
-const NUDGE = { ArrowLeft:[-1,0], ArrowRight:[1,0], ArrowUp:[0,-1], ArrowDown:[0,1] };
+export const NUDGE = { ArrowLeft:[-1,0], ArrowRight:[1,0], ArrowUp:[0,-1], ArrowDown:[0,1] };
 stage.addEventListener("keydown", e => {
   const d = NUDGE[e.key];
   if (!d || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -252,7 +258,7 @@ stage.addEventListener("keydown", e => {
   if (nudge(d[0]*step, d[1]*step)) e.preventDefault();
 });
 
-const onXY = () => {
+export const onXY = () => {
   beginChange("xy");
   if (!setLayerPos(S.sel, parseFloat($("#px").value), parseFloat($("#py").value))) return;
   placementChanged();
@@ -280,7 +286,7 @@ document.addEventListener("keydown", e => {
 $("#zoomIn").addEventListener("click", () => stepZoom(1));
 $("#zoomOut").addEventListener("click", () => stepZoom(-1));
 $("#zoomFit").addEventListener("click", () => {
-  zoom = null;
+  resetZoom();
   $("#zoomFit").setAttribute("aria-pressed", "true");
 });
 
@@ -289,7 +295,7 @@ $("#opv").textContent = "100%"; $("#scv").textContent = "100%";
 $("#oscv").textContent = "100%"; $("#qv").textContent = "82";
 /* Restore before the first plan so the readout is right immediately; the
    format waits for buildFormats() to say what this browser can offer. */
-const stored = readSettings();
+export const stored = readSettings();
 applySettings(stored);
 replan();
 buildFormats().then(() => { applyStoredFormat(stored.format); });

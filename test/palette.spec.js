@@ -9,7 +9,7 @@
 // So these tests cover both halves -- which path runs, and what the user is
 // told about it.
 
-const { test, expect } = require("@playwright/test");
+const { test, expect } = require("./fixtures");
 
 // n distinct opaque colours, spread across the RGB cube so the median-cut
 // histogram has plenty of occupied bins to work with.

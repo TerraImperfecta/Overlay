@@ -1,14 +1,14 @@
-"use strict";
+import { $, esc } from "./util.js";
 
 /* =====================================================================
    10. FORMAT REGISTRY
    ===================================================================== */
-const AV1_CODECS  = ["av01.0.08M.08", "av01.0.05M.08", "av01.0.04M.08"];
-const H264_CODECS = ["avc1.640028", "avc1.4D0032", "avc1.42E01E"];
-const VP9_CODECS  = ["vp09.00.10.08"];
-const VP8_CODECS  = ["vp8"];
+export const AV1_CODECS  = ["av01.0.08M.08", "av01.0.05M.08", "av01.0.04M.08"];
+export const H264_CODECS = ["avc1.640028", "avc1.4D0032", "avc1.42E01E"];
+export const VP9_CODECS  = ["vp09.00.10.08"];
+export const VP8_CODECS  = ["vp8"];
 
-async function firstSupportedCodec(list){
+export async function firstSupportedCodec(list){
   if (typeof VideoEncoder === "undefined") return null;
   for (const codec of list){
     try {
@@ -20,8 +20,8 @@ async function firstSupportedCodec(list){
   return null;
 }
 
-const FORMATS = [];
-async function buildFormats(){
+export const FORMATS = [];
+export async function buildFormats(){
   FORMATS.length = 0;
   FORMATS.push({id:"gif", label:"GIF", ext:"gif", kind:"gif",
     note:"Universal, but 256 colours, 1-bit alpha and 10 ms timing steps."});
@@ -73,4 +73,18 @@ async function buildFormats(){
   sel.innerHTML = FORMATS.map(f => `<option value="${f.id}">${esc(f.label)}</option>`).join("");
   sel.value = FORMATS.some(f => f.id === "webp") ? "webp" : "gif";
   onFormat();
+}
+
+/* Which format the select is showing, and the controls that follow from it.
+   Both lived elsewhere -- currentFormat in the exporter, onFormat in the UI
+   wiring -- which made this module depend on the UI that depends on it. They
+   are about the registry, so they belong here and the cycle goes away. */
+export const currentFormat = () => FORMATS.find(f => f.id === $("#fmt").value) || FORMATS[0];
+
+export function onFormat(){
+  const f = currentFormat(); if (!f) return;
+  $("#fmtNote").textContent = f.note;
+  $("#qualityCtl").hidden = !f.quality;
+  $("#loopsCtl").hidden = !f.recorder;
+  $("#render").textContent = "Render";
 }

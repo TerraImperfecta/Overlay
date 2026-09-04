@@ -1,9 +1,10 @@
-"use strict";
+import { $ } from "./util.js";
+import { breathe, makeRenderCanvas } from "./11-app.js";
 
 /* =====================================================================
    9. WEBCODECS ENCODE DRIVER
    ===================================================================== */
-async function encodeWithVideoEncoder(fmt, W, H, plan, geom, quality, say, view){
+export async function encodeWithVideoEncoder(fmt, W, H, plan, geom, quality, say, view){
   const R = makeRenderCanvas(W, H, geom, true, view);
   const fps = Math.max(1, plan.count / (plan.outDur/1000));
   const bitrate = Math.round(W * H * fps * (0.03 + 0.22*quality));
@@ -54,13 +55,13 @@ async function encodeWithVideoEncoder(fmt, W, H, plan, geom, quality, say, view)
 
 /* Which MIME each still output should decode back as. ImageDecoder reads APNG
    under "image/png"; there is no separate animated type to ask for. */
-const VERIFY_MIME = {gif:"image/gif", webp:"image/webp", apng:"image/png", avif:"image/avif"};
+export const VERIFY_MIME = {gif:"image/gif", webp:"image/webp", apng:"image/png", avif:"image/avif"};
 
 /* Returns {ok, reason, frames} rather than a bare boolean, because the still
    formats have no fallback to substitute: if verification fails the user gets
    an error, and "decoded 5 frames instead of 6" is a far better error than
    "didn't work". */
-async function verifyBlob(blob, kind, expectFrames){
+export async function verifyBlob(blob, kind, expectFrames){
   const mime = VERIFY_MIME[kind];
   if (mime){
     /* No ImageDecoder means unverifiable, which is not the same as bad. */

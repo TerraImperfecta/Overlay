@@ -17,7 +17,7 @@
 // directly. #24 is the reason: a test aimed one layer below the bug asserted on
 // a value the user never sees, and passed while the feature was broken.
 
-const { test, expect } = require("@playwright/test");
+const { test, expect } = require("./fixtures");
 
 // Drop a corpus file on a slot exactly as a user would, and wait for the load
 // to settle.

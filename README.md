@@ -49,10 +49,16 @@ source loader, timeline merge, GIF quantizer/encoder, WebP muxer, APNG muxer, IS
 export, UI wiring — plus `util.js`, which holds the three helpers everything uses. Each file
 keeps its banner comment; the numbers are the map, and PLAN.md refers to them.
 
-**They are ordinary scripts, not modules, and the order in `index.html` is the order they must
-load in.** One shared global scope is what lets the GIF worker be assembled by stringifying
-functions that find each other, and what lets the tests reach the code at all. A module would
-buy encapsulation and cost both.
+They are **ES modules**. `index.html` loads one script, `js/main.js`, and the import graph
+decides what else loads and in what order — there is no ordering to get right by hand, and
+still no build step. `main.js` also re-exports everything, which is how the test suite reaches
+the code; nothing in the app imports from it.
+
+Two consequences worth knowing before editing. A module cannot assign another module's binding,
+so the few pieces of shared mutable state — whether a render is running, whether one was
+cancelled — are changed through named functions in `js/11-app.js` rather than by assignment.
+And `gifWorkerSource()` builds a Worker by stringifying functions, so anything it lists must
+reference only what is listed alongside it; the worker has no imports and no page.
 
 ## Run it
 

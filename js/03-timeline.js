@@ -1,26 +1,24 @@
-"use strict";
-
 /* =====================================================================
    3. TIMELINE MERGE
       Boundaries stay in exact milliseconds. Only the GIF path quantises
       to centiseconds, and it carries the rounding error forward.
    ===================================================================== */
-const gcd = (a,b) => { while (b){ [a,b] = [b, a%b]; } return a; };
-const lcm = (a,b) => a / gcd(a,b) * b;
+export const gcd = (a,b) => { while (b){ [a,b] = [b, a%b]; } return a; };
+export const lcm = (a,b) => a / gcd(a,b) * b;
 
-function effDurations(A,B){
+export function effDurations(A,B){
   if (A.static && B.static) return [1000,1000];
   if (A.static) return [B.duration, B.duration];
   if (B.static) return [A.duration, A.duration];
   return [A.duration, B.duration];
 }
-function chooseMode(dA,dB,requested){
+export function chooseMode(dA,dB,requested){
   if (requested !== "auto") return requested;
   const L = lcm(Math.round(dA), Math.round(dB));
   return (L <= 12000 && L/dA <= 12 && L/dB <= 12) ? "lcm" : "stretch";
 }
 
-function planTimeline(A,B,requested,maxFrames){
+export function planTimeline(A,B,requested,maxFrames){
   const [dA,dB] = effDurations(A,B);
   const mode = chooseMode(dA,dB,requested);
   let outDur, kA = 1, kB = 1;
@@ -69,7 +67,7 @@ function planTimeline(A,B,requested,maxFrames){
           count:delaysMs.length, resampled};
 }
 
-function frameAt(src,t,k){
+export function frameAt(src,t,k){
   if (src.static) return 0;
   let u = (t/k) % src.duration;
   if (u < 0) u += src.duration;
