@@ -122,7 +122,8 @@
      ]
     }
    ],
-   "bytes": 279
+   "bytes": 279,
+   "lzwResets": 0
   },
   {
    "file": "02-disposal-2.gif",
@@ -242,7 +243,8 @@
      ]
     }
    ],
-   "bytes": 144
+   "bytes": 144,
+   "lzwResets": 0
   },
   {
    "file": "03-disposal-3.gif",
@@ -392,7 +394,8 @@
      ]
     }
    ],
-   "bytes": 166
+   "bytes": 166,
+   "lzwResets": 0
   },
   {
    "file": "04-local-palettes.gif",
@@ -452,7 +455,8 @@
      ]
     }
    ],
-   "bytes": 213
+   "bytes": 213,
+   "lzwResets": 0
   },
   {
    "file": "05-subrect.gif",
@@ -808,7 +812,8 @@
      ]
     }
    ],
-   "bytes": 197
+   "bytes": 197,
+   "lzwResets": 0
   },
   {
    "file": "06-delay-zero.gif",
@@ -884,7 +889,8 @@
      ]
     }
    ],
-   "bytes": 201
+   "bytes": 201,
+   "lzwResets": 0
   },
   {
    "file": "07-single-frame.gif",
@@ -912,7 +918,8 @@
      ]
     }
    ],
-   "bytes": 66
+   "bytes": 66,
+   "lzwResets": 0
   },
   {
    "file": "08-first-frame-partial.gif",
@@ -1092,7 +1099,258 @@
      ]
     }
    ],
-   "bytes": 144
+   "bytes": 144,
+   "lzwResets": 0
+  },
+  {
+   "file": "09-transparent-index.gif",
+   "note": "Transparent colour index: pixels are skipped, not erased",
+   "width": 24,
+   "height": 24,
+   "frameCount": 3,
+   "delaysMs": [
+    100,
+    100,
+    100
+   ],
+   "frames": [
+    {
+     "delayMs": 100,
+     "probes": [
+      {
+       "x": 3,
+       "y": 3,
+       "rgba": [
+        0,
+        0,
+        0,
+        0
+       ]
+      },
+      {
+       "x": 9,
+       "y": 9,
+       "rgba": [
+        255,
+        0,
+        0,
+        255
+       ]
+      },
+      {
+       "x": 15,
+       "y": 9,
+       "rgba": [
+        255,
+        0,
+        0,
+        255
+       ]
+      },
+      {
+       "x": 20,
+       "y": 3,
+       "rgba": [
+        0,
+        0,
+        0,
+        0
+       ]
+      },
+      {
+       "x": 2,
+       "y": 20,
+       "rgba": [
+        0,
+        0,
+        0,
+        0
+       ]
+      }
+     ]
+    },
+    {
+     "delayMs": 100,
+     "probes": [
+      {
+       "x": 3,
+       "y": 3,
+       "rgba": [
+        0,
+        255,
+        0,
+        255
+       ]
+      },
+      {
+       "x": 9,
+       "y": 9,
+       "rgba": [
+        0,
+        255,
+        0,
+        255
+       ]
+      },
+      {
+       "x": 15,
+       "y": 9,
+       "rgba": [
+        255,
+        0,
+        0,
+        255
+       ]
+      },
+      {
+       "x": 20,
+       "y": 3,
+       "rgba": [
+        0,
+        0,
+        0,
+        0
+       ]
+      },
+      {
+       "x": 2,
+       "y": 20,
+       "rgba": [
+        0,
+        255,
+        0,
+        255
+       ]
+      }
+     ]
+    },
+    {
+     "delayMs": 100,
+     "probes": [
+      {
+       "x": 3,
+       "y": 3,
+       "rgba": [
+        0,
+        0,
+        255,
+        255
+       ]
+      },
+      {
+       "x": 9,
+       "y": 9,
+       "rgba": [
+        0,
+        0,
+        0,
+        0
+       ]
+      },
+      {
+       "x": 15,
+       "y": 9,
+       "rgba": [
+        0,
+        0,
+        0,
+        0
+       ]
+      },
+      {
+       "x": 20,
+       "y": 3,
+       "rgba": [
+        0,
+        0,
+        0,
+        0
+       ]
+      },
+      {
+       "x": 2,
+       "y": 20,
+       "rgba": [
+        0,
+        0,
+        0,
+        0
+       ]
+      }
+     ]
+    }
+   ],
+   "bytes": 191,
+   "lzwResets": 0
+  },
+  {
+   "file": "10-lzw-reset.gif",
+   "note": "LZW dictionary reset: the table fills and the encoder emits a clear code",
+   "width": 112,
+   "height": 96,
+   "frameCount": 1,
+   "delaysMs": [
+    100
+   ],
+   "frames": [
+    {
+     "delayMs": 100,
+     "probes": [
+      {
+       "x": 0,
+       "y": 0,
+       "rgba": [
+        102,
+        102,
+        102,
+        255
+       ]
+      },
+      {
+       "x": 55,
+       "y": 48,
+       "rgba": [
+        17,
+        17,
+        17,
+        255
+       ]
+      },
+      {
+       "x": 10,
+       "y": 90,
+       "rgba": [
+        102,
+        102,
+        102,
+        255
+       ]
+      },
+      {
+       "x": 100,
+       "y": 80,
+       "rgba": [
+        34,
+        34,
+        34,
+        255
+       ]
+      },
+      {
+       "x": 111,
+       "y": 95,
+       "rgba": [
+        187,
+        187,
+        187,
+        255
+       ]
+      }
+     ]
+    }
+   ],
+   "bytes": 6676,
+   "lzwResets": 1
   }
  ]
 }

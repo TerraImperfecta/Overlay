@@ -519,6 +519,26 @@ will point at the box far faster than reading the spec again.
 - A frame with delay 0 (must render as 100 ms)
 - A single-frame GIF (must be treated as static, contributing no boundaries)
 - A GIF whose first frame is not full-canvas
+- A **transparent palette index** declared in the graphic control extension — added in #60.
+  Distinct from the two above, which get their transparency from pixels nobody wrote: a
+  transparent index means *leave what is underneath*, not *erase*. `09` paints one over an
+  opaque region and over an empty one in the same frame, and then disposes with method 2, which
+  clears the whole frame rect including the pixels it never drew.
+- The **LZW dictionary reset** — added in #60. Every other fixture is far too small to widen the
+  code size past its first bump, so neither the 4096-entry reset nor the decoder's matching
+  `code === clear` branch had ever run.
+
+  `10` is 6.7 KB where the others are hundreds of bytes, and that is irreducible: the table
+  holds 4096 entries and starts with 18, so reaching a reset takes about 4086 emitted codes
+  however the image is drawn — roughly ten thousand pixels of noise, about 5.5 KB of codes
+  whatever the palette. The noise comes from an xorshift32 written out in `make_corpus.py`
+  rather than from `random`, because the committed fixtures must regenerate byte-for-byte on
+  whatever Python CI runs.
+
+  `make_corpus.py` asserts the reset actually happened and that no other fixture triggers one,
+  and `corpus.spec.js` holds the committed `expected.json` to the same thing. A fixture that
+  exists to reach a branch has to be able to prove it still does; shrinking the image below the
+  threshold would otherwise leave it passing every test while exercising nothing.
 
 **Sync modes.** ~~Load pairs with these durations and check the mode Auto picks.~~ **Confirmed
 in #23**, and automated — every row below is a test, and each forced mode overrides Auto. The

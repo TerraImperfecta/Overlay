@@ -29,6 +29,8 @@ means the generator changed.
 | `06-delay-zero.gif` | 201 | 4 | The sub-20ms delay clamp, and its exact boundary |
 | `07-single-frame.gif` | 66 | 1 | A still: no GCE, and no timeline boundaries |
 | `08-first-frame-partial.gif` | 144 | 3 | A first frame smaller than the canvas |
+| `09-transparent-index.gif` | 191 | 3 | A transparent palette index, and what disposal 2 then clears |
+| `10-lzw-reset.gif` | 6676 | 1 | The LZW table filling, and the encoder's clear code |
 
 1410 bytes for the set. Each is designed so that a failure is *obvious* rather than subtle:
 
@@ -106,9 +108,19 @@ Through `loadSource()`, the tool's own entry point:
 | `06` | gif | 16×16 | 4 | 100, 100, 20, 50 | 270 | no |
 | `07` | gif | 16×16 | 1 | 100 | **0** | **yes** |
 | `08` | gif | 24×24 | 3 | 100, 100, 100 | 300 | no |
+| `09` | gif | 24×24 | 3 | 100, 100, 100 | 300 | no |
+| `10` | gif | 112×96 | 1 | 100 | **0** | **yes** |
 
 `07` reporting `duration: 0` and `static: true` is the point of that file: a still source
-contributes no boundaries to the merge.
+contributes no boundaries to the merge. `10` is also a still, incidentally — one frame is all it
+takes to fill the LZW table, and a second would only make the file bigger.
+
+`10` is kilobytes where every other fixture is bytes, and that is irreducible rather than
+careless. The table holds 4096 entries and starts with 18 of them, so reaching the reset takes
+about 4086 emitted codes however the image is drawn — roughly ten thousand pixels of noise, or
+about 5.5 KB of codes whatever the palette size. `make_corpus.py` asserts the reset actually
+happened, so the file cannot quietly shrink below the threshold and go on passing while testing
+nothing.
 
 ### The one intentional disagreement
 
@@ -131,10 +143,8 @@ broken the preview, not fixed the decoder.
 
 Worth knowing before this is treated as complete coverage:
 
-- **Transparent index within a frame.** Every frame here is opaque; `02` and `08` rely on
-  never-written pixels for their transparency, not on a transparent palette entry. See #60.
-- **LZW dictionary reset.** The files are small enough that the code size never widens past the
-  first bump, so the 4096-entry clear path is untested. The generator implements it. See #60.
+Both entries that used to sit here — a transparent palette index, and the LZW dictionary reset —
+were closed by #60 and are now `09` and `10`.
 
 Malformed input — truncated streams, corrupt LZW, absurd dimensions — is covered by
 `test/malformed.spec.js` (#55) rather than by files here. Those inputs are derived from
