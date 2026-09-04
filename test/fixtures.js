@@ -31,6 +31,13 @@ const EXPOSE = () => import("/js/main.js").then((ns) => {
   if (refused.length) throw new Error("could not expose: " + refused.join(", "));
 });
 
+/* The same thing for the scripts that drive the app but are not Playwright
+   specs -- export-fixtures.js and bench-gif.js -- which get no fixture and
+   would otherwise find none of the app's names. */
+async function exposeApp(page) {
+  await page.evaluate(EXPOSE);
+}
+
 const test = base.test.extend({
   page: async ({ page }, use) => {
     for (const method of ["goto", "reload"]) {
@@ -45,4 +52,4 @@ const test = base.test.extend({
   },
 });
 
-module.exports = { test, expect: base.expect };
+module.exports = { test, expect: base.expect, exposeApp };

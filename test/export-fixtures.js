@@ -17,6 +17,7 @@
 // right.
 
 const { chromium } = require("@playwright/test");
+const { exposeApp } = require("./fixtures");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -68,6 +69,7 @@ async function waitForServer(url, timeoutMs = 10000) {
     page.on("pageerror", (e) => pageErrors.push(e.message));
 
     await page.goto(`${BASE}/index.html`);
+    await exposeApp(page);
     await page.waitForFunction(() => document.querySelector("#fmt")?.options.length > 0);
 
     const setup = await page.evaluate(async ({ baseGif, overGif, outScale,
@@ -162,7 +164,7 @@ async function waitForServer(url, timeoutMs = 10000) {
       path.join(OUT, STRESS ? "plan-long.json" : "plan.json"),
       JSON.stringify({ ...setup, written, pageErrors }, null, 1) + "\n"
     );
-    console.log(`\nout/plan.json written${pageErrors.length ? ` (page errors: ${pageErrors.length})` : ""}`);
+    console.log(`\nout/${STRESS ? "plan-long.json" : "plan.json"} written${pageErrors.length ? ` (page errors: ${pageErrors.length})` : ""}`);
   } finally {
     await browser.close();
     server.kill();

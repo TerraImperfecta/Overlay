@@ -3,6 +3,7 @@
 // consecutive requestAnimationFrame callbacks during the export -- that gap is
 // exactly the beat the user sees the page stop responding for.
 const { chromium } = require("@playwright/test");
+const { exposeApp } = require("./fixtures");
 const { spawn } = require("node:child_process");
 const path = require("node:path");
 
@@ -19,6 +20,7 @@ const SIZES = [256, 512, 768, 1536];
     for (let i = 0; i < 60; i++) { try { if ((await fetch("http://localhost:8936/index.html")).ok) break; } catch {} await new Promise(r => setTimeout(r, 100)); }
     const p = await b.newPage();
     await p.goto("http://localhost:8936/index.html");
+    await exposeApp(p);
     await p.waitForFunction(() => document.querySelector("#fmt")?.options.length > 0);
 
     const rows = await p.evaluate(async (sizes) => {

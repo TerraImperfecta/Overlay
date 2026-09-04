@@ -238,6 +238,22 @@ breaks", not as a list of probable defects. Rank your suspicion in this order:
    two clusters, maximum relative timecode 29600. The margin is structural — the condition is
    `rel > 30000`, so a relative timecode cannot exceed 30000 whatever the frame timing, leaving
    2767 ms of headroom.
+
+   **Corroborated by FFmpeg in #58.** #18 checked this with `test/inspect_container.py`, which is
+   a second implementation rather than an outside authority — a shared misreading of the spec
+   would fool it and the muxer alike. `test/validate_containers.py` now reads the same files with
+   **libavformat 62.12**, which is what `ffprobe` is a thin CLI over, and agrees on **every
+   timestamp to 0.000 ms** — both MP4s and all three WebM variants, in the normal export and in
+   the 55-frame stress export that crosses a cluster break. Two independent readings of the same
+   bytes now say the same thing.
+
+   PyAV supplies libavformat in its wheels, so this needs no system package — which is what had
+   blocked it: Homebrew has dropped Intel x86_64, and the development machine's Homebrew is the
+   Intel one.
+
+   Keep the pairing. Our parser is the one that can say *why* — "two clusters, relative timecodes
+   reset at 30400, maximum 29600 against a limit of 32767" — and libavformat is the one whose
+   agreement means something.
 4. **ISOBMFF sample tables.** `stts` run-length compression and the single-chunk `stsc`/`stco`
    arrangement. **Verified in #18** in both shapes: uneven delays produce one entry per sample
    (nothing to compress), 55 identical delays produce a single `(55, 800)` entry.
