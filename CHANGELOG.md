@@ -77,6 +77,10 @@ Notable changes to Overlay. Format follows [Keep a Changelog](https://keepachang
 
 ### Fixed
 
+- Publishing is gated on the tests. The site was served straight from `main`, so a merge went
+  live whether CI had passed or not; it now deploys from a workflow job that runs only after
+  the browser tests, the WebKit run and the corpus check all pass.
+
 - A truncated or corrupt GIF froze the tab instead of being rejected: two length-prefixed block
   walks had no bound and looped forever past the end of the buffer. Both now stop and report a
   bad file, leaving any already-loaded source untouched.

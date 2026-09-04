@@ -5,7 +5,9 @@ on:
     branches: [main]
   pull_request:
 
-# A run is only interesting for the newest commit on a branch.
+# A run is only interesting for the newest commit on a branch. The deploy job
+# below opts out of this and uses its own group: cancelling a publish halfway
+# is a different and worse thing than cancelling a test run.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -97,3 +99,41 @@ jobs:
             echo "Run 'python3 corpus/make_corpus.py' and commit the result."
             exit 1
           fi
+
+  # Publishing used to happen on its own, straight from the branch, with no way
+  # to depend on anything: GitHub built `main` on every push and the site went
+  # live whether the tests had passed or not. That is not hypothetical -- on
+  # 2026-09-04 commit 9d2f6aa deployed successfully while its CI was failing.
+  #
+  # A branch-deploy cannot be gated, so publishing moves into this workflow,
+  # where `needs` means what it says.
+  deploy:
+    name: Deploy to Pages
+    needs: [test, webkit, corpus]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    # Deliberately not the workflow-wide group: a publish that is half-applied
+    # is worse than one that waits, so these queue rather than cancel.
+    concurrency:
+      group: pages-deploy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/configure-pages@v6
+
+      # The repository root, which is what the branch deploy published, so the
+      # site's contents do not change with the mechanism. CNAME travels with it
+      # and keeps overlay.immanuelqrw.dev pointed here.
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: .
+
+      - id: deployment
+        uses: actions/deploy-pages@v5
