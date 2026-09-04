@@ -488,6 +488,17 @@ will point at the box far faster than reading the spec again.
     `--a` as *text* was 4.48:1 on `--panel` and 3.98:1 on `--panel-2`, both under AA. `--a-ink`
     is the same pink lightened until the worst ground passes; `--a` stays the saturated fill for
     lanes and swatches. The check is a test, not a comment.
+
+    **A second pass in #94** did what #65 left: a panel title and a field label were the same
+    thing to look at — 10px, dim, uppercase, mono — so nothing said which was the heading. Titles
+    are brighter, a size larger, and sit on their own band. The `<select>` was the last control
+    still drawn by the browser and read as borrowed; it has `appearance:none` and an inline-SVG
+    chevron now.
+
+    **Buttons transition `border-color` and not `background`, deliberately.** Transitioning the
+    background made a segmented control *fade* into its selected state over 120 ms, so the
+    control lagged the thing it was reporting. `interface.spec.js` caught it by reading the
+    colour straight after a click and finding the old one — which is what the eye sees too.
 13. ~~Keyboard and numeric placement.~~ **Done in #61.** Dragging on the preview was the only
     way to set `place[i].x/y`, so a keyboard user could reach every other control and then not
     do the one thing the tool is for. Arrow keys nudge the selected layer by one base pixel and
