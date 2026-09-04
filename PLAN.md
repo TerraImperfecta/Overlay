@@ -370,13 +370,19 @@ will point at the box far faster than reading the spec again.
 
     | | ms | share |
     |---|---|---|
-    | the compositing loop | 55.1 | 83% of the export's longest block |
-    | └ compositing | 44.4 | **81% of the loop** |
-    | └ readback (`getImageData`) | 15.7 | 28% of the loop |
+    | the compositing loop | 51.9 | |
+    | └ compositing | 42.4 | **82% of the loop** |
+    | └ readback (`getImageData`) | 14.9 | 29% of the loop |
 
     Compositing and readback sum to roughly the loop, which is what makes the split
-    trustworthy. The win is strongly size-dependent: at 256² the loop is only 9% of the block,
-    so a small export would gain nothing.
+    trustworthy.
+
+    **One figure in the first version of this entry was wrong.** It said the loop was 83% of
+    the export's longest block, from a `maxBlockMs` that started its sampler *before* the
+    benchmark's own palette probe — a median cut over a full frame, several ms of synchronous
+    work no export performs, setting a floor the measurement could never go below. Corrected in
+    #16, which also showed the real block was 13 ms at 768², under one frame at 60 Hz. The
+    attribution above never depended on it.
 
     **Do not measure this the obvious way.** Timing a loop that composites 36 frames into one
     canvas reports compositing as *nearly free* — 1.2 ms rather than 44.4 ms, understating it
@@ -395,6 +401,37 @@ will point at the box far faster than reading the spec again.
     worker is gone from the main thread, where the preview draws from those same bitmaps and
     `disposeSource` owns them (#26). The measurement says the prize is real; it does not make
     that cheaper.
+16. ~~Composite in the Worker.~~ **Done in #63.** The export's longest block no longer grows
+    with output size:
+
+    | output | composited here | as shipped |
+    |---|---|---|
+    | 256² | 1.3 ms | 9 ms |
+    | 512² | 9.3 ms | 9 ms |
+    | 768² | 19.5 ms | 9 ms |
+    | 1536² | **49.1 ms** | **10 ms** |
+
+    Roughly 9 ms is the idle frame cadence, so at every size the export now blocks on nothing.
+    Below 768² there was never anything to win — which is why 1536 was added to the benchmark's
+    sizes. At 768² alone this looks marginal, and that is the size #63 was argued from.
+
+    **The bitmaps are cloned, not transferred, and that must stay true.** An `ImageBitmap` sent
+    with a transfer list is gone from this thread, where the preview draws from those same
+    bitmaps every frame and `disposeSource` owns them (#26) — the preview would go black
+    mid-export, and the only symptom would be a `drawImage` that throws. Cloning turns out to be
+    nearly free: `postMessage` with 36 frames across took **0.7 ms**, because a browser
+    refcounts the underlying surface rather than copying pixels. There is a test that draws
+    every source bitmap after an export.
+
+    `composite`, `layerBox`, `frameAt`, `renderContext` and `compositeInto` are carried into the
+    worker as source, the way #29 carried the quantizer. Two implementations of compositing was
+    the trap to avoid, and `renderContext` exists so the OffscreenCanvas and the element cannot
+    drift on `imageSmoothingEnabled` or the alpha flag — which would show up as different output
+    bytes rather than as an error. The equality test from #29 covers exactly that.
+
+    `exportGIF` now takes its own snapshot when the caller omits one. The view used to be
+    optional because `composite()` fell back to reading `S` live, and there is no `S` in a
+    worker.
 
 ---
 

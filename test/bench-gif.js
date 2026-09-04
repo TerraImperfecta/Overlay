@@ -6,7 +6,10 @@ const { chromium } = require("@playwright/test");
 const { spawn } = require("node:child_process");
 const path = require("node:path");
 
-const SIZES = [256, 512, 768];
+/* 256 through 768 are kept for continuity with the numbers recorded on #29 and
+   #63. 1536 is here because the block this is about only becomes obvious above
+   768: at 768 it was 13 ms, which is under one frame, and at 1536 it was 48. */
+const SIZES = [256, 512, 768, 1536];
 
 (async () => {
   const root = path.resolve(__dirname, "..");
@@ -67,17 +70,21 @@ const SIZES = [256, 512, 768];
           delaysMs: Array(36).fill(100), delaysCs: Array(36).fill(10), outDur: 3600,
         });
 
-        // Sample the frame clock throughout, and keep the largest gap.
-        let maxGap = 0, last = performance.now(), running = true;
-        (function sample(){ if (!running) return;
-          const now = performance.now(); maxGap = Math.max(maxGap, now - last); last = now;
-          requestAnimationFrame(sample); })();
-
         // Which palette path is this exercising? Median cut is the expensive one.
         const probeR = makeRenderCanvas(W, H, g, false, renderView(plan));
         probeR.at(1);
         const probe = buildPalette([probeR.cx.getImageData(0, 0, W, H).data], true);
         const path = probe.exact ? "exact" : "median cut";
+
+        /* The sampler starts *after* the probe. It used to start before, which
+           meant this benchmark's own median cut over a full frame -- several
+           milliseconds of synchronous main-thread work that no export performs
+           -- was counted as part of the export's longest block, and set a floor
+           the measurement could never go below. */
+        let maxGap = 0, last = performance.now(), running = true;
+        (function sample(){ if (!running) return;
+          const now = performance.now(); maxGap = Math.max(maxGap, now - last); last = now;
+          requestAnimationFrame(sample); })();
 
         const t0 = performance.now();
         const blob = await exportGIF(W, H, g, plan, () => {}, renderView(plan));
@@ -258,13 +265,18 @@ const SIZES = [256, 512, 768];
     console.log("  so timing that reports compositing as nearly free. One canvas each, with a");
     console.log("  1x1 read to force it, is what the middle column measures.");
 
-    console.log(`\nIs the export's longest block the compositing loop?`);
-    console.log(`${"output".padEnd(12)}${"block in loop".padEnd(16)}${"block in export".padEnd(18)}share`);
+    console.log(`\nWhat moving compositing off the main thread bought`);
+    console.log(`${"output".padEnd(12)}${"if composited here".padEnd(21)}${"as shipped".padEnd(13)}saved`);
     for (let i = 0; i < rows.attrib.length; i++) {
       const a = rows.attrib[i], e = rows.out[i];
-      console.log(`${(a.W + "x" + a.H).padEnd(12)}${(ms(a.blockInLoop) + " ms").padEnd(16)}` +
-                  `${(e.maxBlockMs + " ms").padEnd(18)}${pc(a.blockInLoop, e.maxBlockMs)}`);
+      const saved = a.blockInLoop - e.maxBlockMs;
+      console.log(`${(a.W + "x" + a.H).padEnd(12)}${(ms(a.blockInLoop) + " ms").padEnd(21)}` +
+                  `${(e.maxBlockMs + " ms").padEnd(13)}${saved > 1 ? ms(saved) + " ms" : "—"}`);
     }
+    console.log("  Left: the same loop still run on this thread, breathing every eight frames,");
+    console.log("  which is what the export used to do. Right: the export's real longest block.");
+    console.log("  The right-hand column no longer grows with output size; roughly 9 ms is the");
+    console.log("  idle frame cadence, so at every size the export now blocks on nothing.");
 
     console.log(`\nWould separating draw and read -- no worker needed -- help instead?`);
     console.log(`${"output".padEnd(12)}${"interleaved".padEnd(14)}${"phased".padEnd(11)}change`);
