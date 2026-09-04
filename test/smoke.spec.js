@@ -48,13 +48,56 @@ test("capability probing yields a usable format list", async ({ page }) => {
   expect(selected).toBe(formats.some((f) => f.id === "webp") ? "webp" : "gif");
 });
 
-test("the icon rasterises without leaving the page broken", async ({ page }) => {
+// The old version of this test matched `link[rel="icon"], link[rel=
+// "apple-touch-icon"]`. The first of those is the static one in <head> and is
+// always there, so the assertion held whether or not the rasteriser ran -- and
+// it never ran, on any engine (#76). A test named for a thing must be able to
+// fail when that thing is broken.
+test("the icon rasterises into an apple-touch-icon", async ({ page }) => {
   await page.goto("/index.html");
   await expect(page).toHaveTitle(/Overlay/);
-  const linked = await page.evaluate(
-    () => !!document.querySelector('link[rel="icon"], link[rel="apple-touch-icon"]')
-  );
-  expect(linked).toBe(true);
+
+  const link = page.locator('link[rel="apple-touch-icon"]');
+  await expect(link).toHaveCount(1, { timeout: 5000 });
+
+  const r = await page.evaluate(async () => {
+    const el = document.querySelector('link[rel="apple-touch-icon"]');
+    // A real PNG, not merely a link: decode it and check it is the size drawn.
+    const bmp = await createImageBitmap(await (await fetch(el.href)).blob());
+    return { href: el.href.slice(0, 22), w: bmp.width, h: bmp.height,
+             fromStatic: el.href === document.querySelector('link[rel="icon"]').href };
+  });
+
+  expect(r.href).toBe("data:image/png;base64,");
+  expect({ w: r.w, h: r.h }).toEqual({ w: 180, h: 180 });
+  // It must be the rasterised PNG, not the static SVG copied across.
+  expect(r.fromStatic).toBe(false);
+});
+
+test("a broken rasteriser costs the icon and nothing else", async ({ page }) => {
+  // Section 0 is the first module main.js imports, and a module that throws
+  // during evaluation fails the import that pulled it in -- so before #76 a
+  // missing header or an objecting serialiser would have taken the whole app
+  // down. Under the old <script> tags it would only have taken itself.
+  await page.addInitScript(() => {
+    XMLSerializer.prototype.serializeToString = () => { throw new Error("nope"); };
+  });
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+
+  await page.goto("/index.html");
+  await page.waitForFunction(() => document.querySelector("#fmt")?.options.length > 0);
+
+  const r = await page.evaluate(() => ({
+    icon: document.querySelectorAll('link[rel="apple-touch-icon"]').length,
+    formats: FORMATS.length,
+    slots: document.querySelectorAll(".slot .lbl").length,
+  }));
+
+  expect(errors, `the page threw: ${errors.join(" | ")}`).toEqual([]);
+  expect(r.icon).toBe(0);          // the icon is lost, as it must be
+  expect(r.formats).toBeGreaterThan(0);   // and nothing else is
+  expect(r.slots).toBe(2);
 });
 
 // --- the split into files (#75), now as modules (#78) ---------------------

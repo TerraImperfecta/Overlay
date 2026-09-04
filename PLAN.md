@@ -61,7 +61,7 @@ Each row is a file in `js/`, named for its number and contents, and an ES module
 
 | Section | Contents |
 |---|---|
-| 0 | Runtime icon rasterisation (SVG data URI → `apple-touch-icon`) |
+| 0 | Runtime icon rasterisation (header `<svg>` → PNG `apple-touch-icon`) |
 | 1 | GIF decoder: LZW, interlace, disposal methods, frame flattening |
 | 2 | Universal source loader: GIF / `ImageDecoder` / video / stills |
 | 3 | Timeline merge — the core of the tool |
@@ -168,6 +168,27 @@ cannot change between passes. Do not try to patch offsets in place instead.
 **GIF inter-frame diffing only runs when the background is opaque.** With a transparent
 background, disposal method 1 cannot erase a pixel that goes opaque → transparent, so those
 frames must be full-frame with disposal 2.
+
+**The icon is rasterised at load, and that is deliberate.** The obvious alternative is a static
+PNG, which would need no JavaScript at all — and the reason the code gives for running is stale:
+the banner said "so it works on `file://` and hosted", and `file://` support is gone. The reason
+it stays is different. The PNG is drawn from the same `<header>` `<svg>` the page shows, so the
+icon cannot drift from the logo; a committed PNG would need regenerating whenever the mark
+changed, and nothing would catch it if nobody did. Measured in #76 at 0.4–2 ms, after `onload`
+and off the critical path.
+
+**It had never once produced an icon**, on any engine, from the day it was written until #76.
+`outerHTML` does not write an `xmlns` on a foreign element — inside an HTML document the
+namespace is implied — but a `data:` URI is parsed standalone, where SVG without
+`xmlns="http://www.w3.org/2000/svg"` is not SVG. Every engine refused the image and `img.onerror`
+swallowed it. `XMLSerializer` writes the namespace. The test named for the icon matched
+`link[rel="icon"], link[rel="apple-touch-icon"]`, and the first of those is the static one in
+`<head>`, so it passed either way and could not fail.
+
+**Section 0 is wrapped in try/catch, and must stay that way.** It is the first module `main.js`
+imports, and a module that throws during evaluation fails the import that pulled it in — so a
+missing header would cost the whole app, where the old `<script>` tag would have cost only the
+icon. There is a test that breaks the serialiser and asserts the app comes up regardless.
 
 **`MediaRecorder` is a fallback, not a path.** It only appears in the format list when no
 `VideoEncoder` codec is available at all, and is labelled "(real time)". Do not promote it.
