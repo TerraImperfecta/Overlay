@@ -9,7 +9,7 @@
 // cleanly": no half-written file offered, the VideoEncoder closed rather than
 // leaked, the busy flag cleared, and the app usable immediately afterwards.
 
-const { test, expect } = require("@playwright/test");
+const { test, expect } = require("./fixtures");
 
 // Enough frames that a cancel lands mid-render rather than racing the end.
 // Each encode loop yields every fourth or eighth frame, so 55 gives a dozen or

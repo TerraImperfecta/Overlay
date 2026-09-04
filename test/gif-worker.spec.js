@@ -8,7 +8,7 @@
 //
 // The measurement itself lives in test/bench-gif.js and is recorded on #29.
 
-const { test, expect } = require("@playwright/test");
+const { test, expect } = require("./fixtures");
 
 async function setup(page) {
   await page.goto("/index.html");
@@ -115,7 +115,7 @@ test("a render can be cancelled while the worker is encoding", async ({ page }) 
     const say = (t) => {
       if (t === "Building palette" || t.startsWith("Encoding")) {
         sawWorkerProgress = true;
-        cancelling = true;
+        requestCancel();
       }
     };
     let outcome = "resolved";
@@ -124,7 +124,7 @@ test("a render can be cancelled while the worker is encoding", async ({ page }) 
     } catch (e) {
       outcome = e && e.cancelled ? "cancelled" : "error: " + e.message;
     } finally {
-      cancelling = false;
+      renderFinished();
     }
     return { outcome, sawWorkerProgress };
   });
@@ -156,36 +156,46 @@ test("the worker source carries every function it needs", async ({ page }) => {
   expect(r.leaks).toEqual([]);
 });
 
-test("with a worker, this thread does not composite at all", async ({ page }) => {
-  // The point of #63: 82% of the export's main-thread work was the compositing
-  // loop. Byte equality alone would still pass if the frames were quietly being
-  // drawn here and sent across, which is the shape a bad merge would take.
-  await setup(page);
-  const r = await page.evaluate(async (helper) => {
-    eval(helper);
-    const real = window.makeRenderCanvas;
-    let here = 0;
-    window.makeRenderCanvas = (...a) => { here++; return real(...a); };
-    try {
-      const withWorker = await exportOnce();
-      const usedWorker = here;
+test("with a worker, this thread sends frames to composite, not composited frames",
+  async ({ page }) => {
+    // The point of #63: 82% of the export's main-thread work was the compositing
+    // loop. Byte equality alone would still pass if the frames were quietly
+    // being drawn here and shipped across, which is the shape a bad merge takes.
+    //
+    // What is inspected is the job itself. A module-local call cannot be spied
+    // on from out here, but Worker.prototype.postMessage can, and what crosses
+    // it is the property: source bitmaps to composite there, not rgba already
+    // composited here.
+    await setup(page);
+    const r = await page.evaluate(async (helper) => {
+      eval(helper);
+      const real = Worker.prototype.postMessage;
+      let job = null;
+      Worker.prototype.postMessage = function (m, t) { job = m; return real.call(this, m, t); };
+      let withWorker;
+      try { withWorker = await exportOnce(); }
+      finally { Worker.prototype.postMessage = real; }
 
       const RealWorker = window.Worker;
-      here = 0;
       let withoutWorker;
       try { delete window.Worker; withoutWorker = await exportOnce(); }
       finally { window.Worker = RealWorker; }
-      return { usedWorker, withoutWorker: here,
-               sameBytes: withWorker.hash === withoutWorker.hash };
-    } finally { window.makeRenderCanvas = real; }
-  }, EXPORT);
 
-  expect(r.usedWorker).toBe(0);
-  // And the fallback still does composite here, or there would be nothing to
-  // fall back to.
-  expect(r.withoutWorker).toBeGreaterThan(0);
-  expect(r.sameBytes).toBe(true);
-});
+      return {
+        sentAView: !!(job && job.view),
+        sentRgba: !!(job && job.rgba),
+        frameCount: job && job.view && job.view.src[0] ? job.view.src[0].frames.length : 0,
+        sameBytes: withWorker.hash === withoutWorker.hash,
+      };
+    }, EXPORT);
+
+    expect(r.sentAView).toBe(true);
+    // rgba on the job means this thread composited first, which is the bug.
+    expect(r.sentRgba).toBe(false);
+    expect(r.frameCount).toBeGreaterThan(0);
+    // And the fallback still produces the same file.
+    expect(r.sameBytes).toBe(true);
+  });
 
 test("an export leaves the preview's frames usable", async ({ page }) => {
   // The crux #63 named. An ImageBitmap transferred to a worker is gone from

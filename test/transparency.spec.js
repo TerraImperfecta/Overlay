@@ -11,7 +11,7 @@
 // it should not have been", and the background colour is deliberately not black
 // so that a format falling back to black instead of honouring it is visible.
 
-const { test, expect } = require("@playwright/test");
+const { test, expect } = require("./fixtures");
 
 const BG = "#ff00ff";                     // magenta: nothing else produces it
 

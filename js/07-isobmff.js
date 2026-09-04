@@ -1,26 +1,24 @@
-"use strict";
-
 /* =====================================================================
    7. ISOBMFF MUXER  →  MP4 and animated AVIF
    ===================================================================== */
-const cat = list => { let n = 0; for (const a of list) n += a.length;
+export const cat = list => { let n = 0; for (const a of list) n += a.length;
   const o = new Uint8Array(n); let p = 0; for (const a of list){ o.set(a,p); p += a.length; } return o; };
-const s4  = s => Uint8Array.from([s.charCodeAt(0),s.charCodeAt(1),s.charCodeAt(2),s.charCodeAt(3)]);
-const U32 = v => { const a = new Uint8Array(4); new DataView(a.buffer).setUint32(0, v>>>0); return a; };
-const U16 = v => { const a = new Uint8Array(2); new DataView(a.buffer).setUint16(0, v & 0xFFFF); return a; };
-const U8A = arr => Uint8Array.from(arr);
-function box(type, ...parts){
+export const s4  = s => Uint8Array.from([s.charCodeAt(0),s.charCodeAt(1),s.charCodeAt(2),s.charCodeAt(3)]);
+export const U32 = v => { const a = new Uint8Array(4); new DataView(a.buffer).setUint32(0, v>>>0); return a; };
+export const U16 = v => { const a = new Uint8Array(2); new DataView(a.buffer).setUint16(0, v & 0xFFFF); return a; };
+export const U8A = arr => Uint8Array.from(arr);
+export function box(type, ...parts){
   const body = cat(parts), out = new Uint8Array(8 + body.length);
   new DataView(out.buffer).setUint32(0, out.length);
   out.set(s4(type), 4); out.set(body, 8);
   return out;
 }
-const fbox = (type, ver, flags, ...parts) =>
+export const fbox = (type, ver, flags, ...parts) =>
   box(type, U8A([ver, (flags>>16)&255, (flags>>8)&255, flags&255]), ...parts);
-const MATRIX = cat([U32(0x00010000),U32(0),U32(0),U32(0),U32(0x00010000),U32(0),
+export const MATRIX = cat([U32(0x00010000),U32(0),U32(0),U32(0),U32(0x00010000),U32(0),
                     U32(0),U32(0),U32(0x40000000)]);
 
-class Bits {
+export class Bits {
   constructor(u8){ this.d = u8; this.p = 0; }
   f(n){ let v = 0; for (let i=0;i<n;i++){
     v = (v*2) + ((this.d[this.p>>3] >> (7-(this.p&7))) & 1); this.p++; } return v; }
@@ -50,7 +48,7 @@ class Bits {
     return z ? (2 ** z) - 1 + this.f(z) : 0;
   }
 }
-function findSequenceHeader(chunk){
+export function findSequenceHeader(chunk){
   let p = 0;
   while (p < chunk.length){
     const h = chunk[p];
@@ -72,7 +70,7 @@ function findSequenceHeader(chunk){
    the ones most likely to be wrong. `bits` is how far the reader got, which is
    what lets a test prove the whole header was consumed rather than merely that
    the first operating point looked plausible. */
-function parseSequenceHeader(obu){
+export function parseSequenceHeader(obu){
   let q = 1 + ((obu[0] >> 2) & 1 ? 1 : 0);
   if ((obu[0] >> 1) & 1){ while (obu[q] & 0x80) q++; q++; }
   const r = new Bits(obu.subarray(q));
@@ -108,7 +106,7 @@ function parseSequenceHeader(obu){
   return {seqProfile, levelIdx, tier, reduced, bits: r.p};
 }
 
-function av1ConfigRecord(description, firstChunk){
+export function av1ConfigRecord(description, firstChunk){
   if (description && description.length) return description;
   const obu = findSequenceHeader(firstChunk);
   if (!obu) throw new Error("No AV1 sequence header in the first frame.");
@@ -118,7 +116,7 @@ function av1ConfigRecord(description, firstChunk){
                    ((tier & 1) << 7) | 0x0C, 0x00]), obu]);
 }
 
-function sampleEntry(type, W, H, configBox){
+export function sampleEntry(type, W, H, configBox){
   return box(type,
     U8A([0,0,0,0,0,0]), U16(1),
     U16(0), U16(0), U32(0), U32(0), U32(0),
@@ -129,7 +127,7 @@ function sampleEntry(type, W, H, configBox){
     configBox);
 }
 
-function buildMoov(o, mdatOffset){
+export function buildMoov(o, mdatOffset){
   const {W,H,samples,timescale,duration,entryType,configBox,handler} = o;
   const stts = [];
   for (const s of samples){
@@ -163,7 +161,7 @@ function buildMoov(o, mdatOffset){
           box("stbl", ...stbl)))));
 }
 
-function buildMetaBox(W, H, configBox, itemOffset, itemLength){
+export function buildMetaBox(W, H, configBox, itemOffset, itemLength){
   return fbox("meta", 0, 0,
     fbox("hdlr", 0, 0, U32(0), s4("pict"), new Uint8Array(12), U8A([0])),
     fbox("pitm", 0, 0, U16(1)),
@@ -178,7 +176,7 @@ function buildMetaBox(W, H, configBox, itemOffset, itemLength){
       fbox("ipma", 0, 0, U32(1), U16(1), U8A([3, 0x81, 0x02, 0x03]))));
 }
 
-function muxISOBMFF({W,H,samples,entryType,configBox,brands,avif}){
+export function muxISOBMFF({W,H,samples,entryType,configBox,brands,avif}){
   const mdatBody = cat(samples.map(s => s.data));
   const duration = samples.reduce((a,s) => a + s.duration, 0);
   const ftyp = box("ftyp", s4(brands[0]), U32(0), ...brands.map(s4));

@@ -14,7 +14,7 @@
 // blob with the same bytes does not, and corpus/ keeps meaning "valid GIFs that
 // exercise a decode path".
 
-const { test, expect } = require("@playwright/test");
+const { test, expect } = require("./fixtures");
 
 const MANGLE = `
 async function mangled(which){

@@ -12,7 +12,7 @@
 // emphasises nothing, so it now means the output and only the output. That is
 // the kind of rule that decays silently, so it is asserted rather than trusted.
 
-const { test, expect } = require("@playwright/test");
+const { test, expect } = require("./fixtures");
 
 const DESKTOP = { width: 1440, height: 1100 };
 
@@ -118,8 +118,16 @@ test("the zoom controls step, and Fit comes back", async ({ page }) => {
     const out = width(), outPressed = document.querySelector("#zoomFit").getAttribute("aria-pressed");
     document.querySelector("#zoomIn").click(); await frame();
     const back = width();
+
+    /* Fit is clicked from a scale it is not already at. Stepping out and back
+       lands on the fit value again -- the ladder includes it -- so clicking Fit
+       from there proves nothing: the width would match whether the button did
+       anything or not. */
+    document.querySelector("#zoomOut").click();
+    document.querySelector("#zoomOut").click(); await frame();
+    const away = width();
     document.querySelector("#zoomFit").click(); await frame();
-    return { fit, fitPressed, out, outPressed, back, refit: width(),
+    return { fit, fitPressed, out, outPressed, back, away, refit: width(),
              refitPressed: document.querySelector("#zoomFit").getAttribute("aria-pressed") };
   }, LOAD);
 
@@ -128,6 +136,7 @@ test("the zoom controls step, and Fit comes back", async ({ page }) => {
   // Stepping is a manual choice, so Fit stops claiming to be in charge.
   expect(r.outPressed).toBe("false");
   expect(r.back).toBeCloseTo(r.fit, 0);
+  expect(r.away).toBeLessThan(r.fit);
   expect(r.refit).toBeCloseTo(r.fit, 0);
   expect(r.refitPressed).toBe("true");
 });

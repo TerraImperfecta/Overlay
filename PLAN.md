@@ -11,11 +11,24 @@ reopened rather than quietly kept. `file://` is no longer supported: it was a co
 single-file rule, not a goal in itself, and preserving it distorted the code. The single file
 itself is gone too — split in #75 — but no build step arrived with it, and none is wanted.
 
-**The scripts are classic, not modules, and their order in `index.html` is load-bearing.** They
-share one global scope, which is what lets `gifWorkerSource()` assemble a worker by stringifying
-functions that resolve each other, and what lets the tests reach `S`, `geometry()`,
-`parseSequenceHeader` and the rest at all. Converting to modules would break both, and the second
-is not worth a `window` surface that exists only for tests.
+**The scripts are ES modules** (#78). `index.html` loads `js/main.js` and the import graph does
+the rest, so load order is not something to get right by hand. `main.js` re-exports every module
+for the test suite, which reaches the code by name; nothing in the app imports from it.
+
+Three things to know before editing:
+
+- **A module cannot assign another module's binding.** The shared mutable state — `busy`,
+  `cancelling`, `queuedReplan`, `lastGifPalette`, `pausedAt`, `zoom` — lives in `js/11-app.js`
+  and is changed through `renderStarted()`, `renderFinished()`, `requestCancel()`,
+  `takeQueuedReplan()`, `setLastGifPalette()`, `togglePlay()` and `resetZoom()`.
+- **`gifWorkerSource()` stringifies functions**, and the worker it builds has no imports and no
+  page. Anything listed there may reference only what is listed alongside it. `Function.prototype
+  .toString()` does *not* include the `export` keyword, so that part is unaffected — but a
+  declaration written *inside* the worker's template literal is source text, not a declaration,
+  and must not be given one.
+- **Module-local functions cannot be replaced from outside**, which a test needs in order to
+  substitute a broken encoder. `EXPORTERS` in `js/12-export.js` is the dispatch table `render()`
+  goes through, and is that seam.
 
 What has *not* changed: no user data leaves the browser. There are no network calls in the
 tool's own operation, and there is nothing to upload to.
@@ -44,7 +57,7 @@ downstream code depends only on that shape.
 
 The script is divided by numbered banner comments. Keep them; they are the map.
 
-Each row is a file in `js/`, named for its number and contents.
+Each row is a file in `js/`, named for its number and contents, and an ES module.
 
 | Section | Contents |
 |---|---|

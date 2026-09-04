@@ -16,7 +16,7 @@
 // the first operating point correctly while being hopelessly out of step by the
 // end of the header, and only the bit count notices.
 
-const { test, expect } = require("@playwright/test");
+const { test, expect } = require("./fixtures");
 
 // A writer for AV1's bit syntax, so headers can be built field by field.
 const WRITER = `

@@ -12,7 +12,7 @@
 // is refused outright, because disposeSource() closes the very ImageBitmaps the
 // encoder is drawing from.
 
-const { test, expect } = require("@playwright/test");
+const { test, expect } = require("./fixtures");
 
 async function setup(page) {
   await page.goto("/index.html");
@@ -83,13 +83,13 @@ test("replan() defers while a render is running, and lands afterwards", async ({
     const H = Math.max(2, Math.round(g.h * S.outScale) & ~1);
     const before = S.plan;
 
-    busy = true;                       // stand in for a render in flight
+    renderStarted();                   // stand in for a render in flight
     S.sync = "stretch";
     replan();
     const duringIsSame = S.plan === before;
 
-    busy = false;
-    if (queuedReplan) { queuedReplan = false; replan(); }
+    renderFinished();
+    if (takeQueuedReplan()) replan();
     const afterIsNew = S.plan !== before;
 
     return { duringIsSame, afterIsNew, mode: S.plan.mode };
@@ -154,12 +154,12 @@ test("loading a source is refused while a render is running", async ({ page }) =
     const buf = await (await fetch("/corpus/01-interlaced.gif")).arrayBuffer();
     const file = new File([buf], "01-interlaced.gif", { type: "image/gif" });
 
-    busy = true;
+    renderStarted();
     await accept(0, file);
     const slot = document.querySelector('.slot[data-i="0"]');
     const message = slot.querySelector(".meta") ? slot.querySelector(".meta").textContent : "";
     const unchanged = S.src[0] === before;
-    busy = false;
+    renderFinished();
 
     // And it works again once the render is done.
     await accept(0, file);

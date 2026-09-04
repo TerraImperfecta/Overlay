@@ -9,7 +9,7 @@
 // Nothing derived from a loaded file is stored. Not the sources, and not layer
 // placement, whose coordinates are fractions of a base that will not be there.
 
-const { test, expect } = require("@playwright/test");
+const { test, expect } = require("./fixtures");
 
 const KEY = "overlay.settings.v1";
 

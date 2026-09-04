@@ -1,9 +1,9 @@
-"use strict";
+import { BW } from "./04-gif-encoder.js";
 
 /* =====================================================================
    5. ANIMATED WEBP  (still WebPs remuxed into ANMF chunks)
    ===================================================================== */
-function riffChunks(u8){
+export function riffChunks(u8){
   const out = []; let p = 12;
   while (p+8 <= u8.length){
     const cc = String.fromCharCode(u8[p],u8[p+1],u8[p+2],u8[p+3]);
@@ -13,7 +13,7 @@ function riffChunks(u8){
   }
   return out;
 }
-function anmfPayload(still, durationMs, W, H){
+export function anmfPayload(still, durationMs, W, H){
   const keep = riffChunks(still).filter(c => c.cc==="ALPH"||c.cc==="VP8 "||c.cc==="VP8L");
   if (!keep.length) throw new Error("Unexpected WebP layout from this browser.");
   let body = 0;
@@ -29,7 +29,7 @@ function anmfPayload(still, durationMs, W, H){
   }
   return {payload:out, hasAlpha: keep.some(c => c.cc==="ALPH"||c.cc==="VP8L")};
 }
-function muxWebP(W,H,parts,hasAlpha){
+export function muxWebP(W,H,parts,hasAlpha){
   const w = new BW();
   const chunk = (cc,data) => { w.str(cc); w.u32(data.length); w.raw(data);
                                if (data.length & 1) w.u8(0); };

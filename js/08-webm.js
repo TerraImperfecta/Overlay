@@ -1,9 +1,9 @@
-"use strict";
+import { U8A, cat } from "./07-isobmff.js";
 
 /* =====================================================================
    8. EBML MUXER  →  WebM
    ===================================================================== */
-function ebmlSize(n){
+export function ebmlSize(n){
   for (let len=1; len<=8; len++){
     if (n < Math.pow(2, 7*len) - 1){
       const a = new Uint8Array(len);
@@ -14,17 +14,17 @@ function ebmlSize(n){
   }
   throw new Error("Element too large for EBML.");
 }
-const el = (id, payload) => cat([U8A(id), ebmlSize(payload.length), payload]);
-function ebmlUint(v){
+export const el = (id, payload) => cat([U8A(id), ebmlSize(payload.length), payload]);
+export function ebmlUint(v){
   const bytes = []; let n = Math.max(0, Math.round(v));
   do { bytes.unshift(n % 256); n = Math.floor(n/256); } while (n > 0);
   return U8A(bytes);
 }
-const ebmlFloat64 = v => { const a = new Uint8Array(8);
+export const ebmlFloat64 = v => { const a = new Uint8Array(8);
   new DataView(a.buffer).setFloat64(0, v); return a; };
-const ebmlStr = s => U8A([...s].map(c => c.charCodeAt(0)));
+export const ebmlStr = s => U8A([...s].map(c => c.charCodeAt(0)));
 
-function muxWebM({W,H,samples,codecId,codecPrivate}){
+export function muxWebM({W,H,samples,codecId,codecPrivate}){
   const header = el([0x1A,0x45,0xDF,0xA3], cat([
     el([0x42,0x86], ebmlUint(1)), el([0x42,0xF7], ebmlUint(1)),
     el([0x42,0xF2], ebmlUint(4)), el([0x42,0xF3], ebmlUint(8)),

@@ -1,11 +1,12 @@
-"use strict";
+import { $ } from "./util.js";
+import { flattenGIF, parseGIF } from "./01-gif-decoder.js";
 
 /* =====================================================================
    2. UNIVERSAL SOURCE LOADER
    ===================================================================== */
-const VIDEO_FPS = 20, VIDEO_MAX_FRAMES = 200, VIDEO_MAX_EDGE = 640;
+export const VIDEO_FPS = 20, VIDEO_MAX_FRAMES = 200, VIDEO_MAX_EDGE = 640;
 
-async function loadSource(file, onProgress){
+export async function loadSource(file, onProgress){
   const name = file.name || "clip";
   const type = (file.type || "").toLowerCase();
   const ext = name.split(".").pop().toLowerCase();
@@ -38,7 +39,7 @@ async function loadSource(file, onProgress){
            duration: isStatic ? 0 : (t || 100), static: isStatic, thumb:null, meta: note };
 }
 
-async function decodeImage(file, type, ext, onProgress){
+export async function decodeImage(file, type, ext, onProgress){
   const guess = type || ({webp:"image/webp", avif:"image/avif", png:"image/png",
                           jpg:"image/jpeg", jpeg:"image/jpeg", jxl:"image/jxl"}[ext] || "");
   if (typeof ImageDecoder !== "undefined" && guess){
@@ -78,7 +79,7 @@ async function decodeImage(file, type, ext, onProgress){
                  ? "first frame only — no ImageDecoder" : "" };
 }
 
-async function decodeVideo(file, onProgress){
+export async function decodeVideo(file, onProgress){
   const url = URL.createObjectURL(file);
   const v = document.createElement("video");
   v.muted = true; v.playsInline = true; v.preload = "auto"; v.src = url;

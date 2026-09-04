@@ -9,7 +9,7 @@
 // deliberately broken output FAILS. The second is the one that matters. A
 // verifier that never rejects anything is indistinguishable from no verifier.
 
-const { test, expect } = require("@playwright/test");
+const { test, expect } = require("./fixtures");
 
 const STILL_FORMATS = ["gif", "webp", "apng"];
 
@@ -118,8 +118,10 @@ test("render() surfaces a verification failure instead of offering the file", as
   // Break the WebP muxer's output, then drive the real UI and confirm the user
   // is told rather than handed a broken download.
   const out = await page.evaluate(async () => {
-    const original = window.exportWebP;
-    window.exportWebP = async () => new Blob([new Uint8Array([1, 2, 3, 4])], { type: "image/webp" });
+    // EXPORTERS is the registry render() dispatches through; a module-local
+    // function cannot be replaced from out here.
+    const original = EXPORTERS.webp;
+    EXPORTERS.webp = async () => new Blob([new Uint8Array([1, 2, 3, 4])], { type: "image/webp" });
     try {
       document.querySelector("#fmt").value = "webp";
       document.querySelector("#fmt").dispatchEvent(new Event("change", { bubbles: true }));
@@ -135,7 +137,7 @@ test("render() surfaces a verification failure instead of offering the file", as
       return { html: el.innerHTML, download: !!el.querySelector("a.dl"),
                warn: el.querySelector(".warn") ? el.querySelector(".warn").textContent : null };
     } finally {
-      window.exportWebP = original;
+      EXPORTERS.webp = original;
     }
   });
   expect(out.download).toBe(false);

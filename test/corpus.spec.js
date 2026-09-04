@@ -11,7 +11,7 @@
 // for GIF: it shares no code with the decoder under test, so it is a witness
 // rather than an echo. See PLAN.md section 3.
 
-const { test, expect } = require("@playwright/test");
+const { test, expect } = require("./fixtures");
 const fs = require("node:fs");
 const path = require("node:path");
 

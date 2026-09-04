@@ -15,7 +15,7 @@
 // which persist between visits, so a general stack would be a much larger
 // commitment for much less benefit.
 
-const { test, expect } = require("@playwright/test");
+const { test, expect } = require("./fixtures");
 
 const HELPERS = `
 async function li(i, n){
