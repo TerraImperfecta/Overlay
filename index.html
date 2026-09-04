@@ -248,7 +248,26 @@ const idle = ms => new Promise(r => setTimeout(r, ms || 0));
 /* =====================================================================
    1. GIF DECODER
    ===================================================================== */
-function skipBlocks(d,p){ while(d[p]!==0){ p += 1 + d[p]; } return p+1; }
+/* A GIF header may declare any size up to 65535 a side, and nothing downstream
+   questions it. flattenGIF allocates W*H*4 for the canvas and another copy per
+   frame, so a thirty-byte file can ask for gigabytes. 65535 square wants 17GB
+   and throws; 16000 square wants 1GB *per frame* and does not throw at all --
+   it simply eats the machine. Both are refused here, before anything allocates.
+
+   These are policy caps rather than format limits: 16384 is the conventional
+   canvas ceiling, and 64 megapixels keeps one decoded frame under a quarter of
+   a gigabyte. Real GIFs are orders of magnitude below both. */
+const GIF_MAX_SIDE = 16384, GIF_MAX_PIXELS = 64e6;
+
+/* Walks the length-prefixed sub-block chain. The bound is the point: without
+   `p < d.length`, a truncated file runs off the end, `d[p]` is undefined,
+   `p += 1 + undefined` makes p NaN, `d[NaN]` is undefined, and the loop never
+   terminates -- freezing the tab rather than reporting a bad file. */
+function skipBlocks(d,p){
+  while (p < d.length && d[p] !== 0) p += 1 + d[p];
+  if (p >= d.length) throw new Error("That GIF ends in the middle of a block.");
+  return p+1;
+}
 
 function lzwDecode(minCodeSize, data, pixelCount){
   const MAX = 4096, clear = 1 << minCodeSize, eoi = clear + 1;
@@ -290,6 +309,9 @@ function parseGIF(buffer){
   let p = 6;
   const width = d[p]|d[p+1]<<8; p+=2;
   const height = d[p]|d[p+1]<<8; p+=2;
+  if (!(width > 0 && height > 0)) throw new Error("That GIF declares a zero size.");
+  if (width > GIF_MAX_SIDE || height > GIF_MAX_SIDE || width*height > GIF_MAX_PIXELS)
+    throw new Error(`That GIF declares ${width}×${height}, which is too large to decode.`);
   const flags = d[p++]; p+=2;
   let gct = null;
   if (flags & 0x80){ const n = 2 << (flags & 7); gct = d.subarray(p, p+n*3); p += n*3; }
@@ -311,9 +333,12 @@ function parseGIF(buffer){
       if (f & 0x80){ const n = 2 << (f&7); lct = d.subarray(p, p+n*3); p += n*3; }
       const minCode = d[p++];
       let q = p, total = 0;
-      while (d[q] !== 0){ total += d[q]; q += 1 + d[q]; }
+      while (q < d.length && d[q] !== 0){ total += d[q]; q += 1 + d[q]; }
+      if (q >= d.length) throw new Error("That GIF ends in the middle of a frame.");
       const data = new Uint8Array(total); let o = 0; q = p;
-      while (d[q] !== 0){ const n = d[q]; data.set(d.subarray(q+1,q+1+n), o); o += n; q += 1+n; }
+      while (q < d.length && d[q] !== 0){
+        const n = d[q]; data.set(d.subarray(q+1,q+1+n), o); o += n; q += 1+n;
+      }
       p = q + 1;
       const indices = lzwDecode(minCode, data, w*h);
       if (f & 0x40) deinterlace(indices, w, h);

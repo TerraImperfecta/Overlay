@@ -132,8 +132,12 @@ broken the preview, not fixed the decoder.
 Worth knowing before this is treated as complete coverage:
 
 - **Transparent index within a frame.** Every frame here is opaque; `02` and `08` rely on
-  never-written pixels for their transparency, not on a transparent palette entry.
+  never-written pixels for their transparency, not on a transparent palette entry. See #60.
 - **LZW dictionary reset.** The files are small enough that the code size never widens past the
-  first bump, so the 4096-entry clear path is untested. The generator implements it.
-- **Malformed input.** Truncated streams, a missing trailer, a frame extending past the canvas.
-  These belong with error handling rather than with decode correctness.
+  first bump, so the 4096-entry clear path is untested. The generator implements it. See #60.
+
+Malformed input — truncated streams, corrupt LZW, absurd dimensions — is covered by
+`test/malformed.spec.js` (#55) rather than by files here. Those inputs are derived from
+`05-subrect.gif` at test time: "truncated to half of 05-subrect.gif" says what it is, where a
+committed blob with the same bytes would not, and it keeps this directory meaning *valid* GIFs
+that exercise a decode path.

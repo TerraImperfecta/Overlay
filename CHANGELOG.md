@@ -75,6 +75,13 @@ Notable changes to Overlay. Format follows [Keep a Changelog](https://keepachang
   background. Nothing derived from a loaded file is stored, stored values are validated field by
   field, and a browser that throws on `localStorage` simply gets no persistence.
 
+### Fixed
+
+- A truncated or corrupt GIF froze the tab instead of being rejected: two length-prefixed block
+  walks had no bound and looped forever past the end of the buffer. Both now stop and report a
+  bad file, leaving any already-loaded source untouched.
+- A GIF header claiming an enormous size is refused before anything allocates against it.
+
 ### Changed
 
 - `PLAN.md` section 4 records that all four of its suspects were put in front of third-party
