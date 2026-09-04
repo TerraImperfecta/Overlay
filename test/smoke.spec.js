@@ -72,7 +72,7 @@ test("the icon rasterises into an apple-touch-icon", async ({ page }) => {
 });
 
 test("a broken rasteriser costs the icon and nothing else", async ({ page }) => {
-  // Section 0 is the first module main.js imports, and a module that throws
+  // icon.js is the first module main.js imports, and a module that throws
   // during evaluation fails the import that pulled it in -- so before #76 a
   // missing header or an objecting serialiser would have taken the whole app
   // down. Under the old <script> tags it would only have taken itself.

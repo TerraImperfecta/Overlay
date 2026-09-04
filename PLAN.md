@@ -11,13 +11,13 @@ reopened rather than quietly kept. `file://` is no longer supported: it was a co
 single-file rule, not a goal in itself, and preserving it distorted the code. The single file
 itself is gone too — split in #75 — but no build step arrived with it, and none is wanted.
 
-**Section 11 is seven files, and the split follows one rule** (#85). It was 529 lines doing
-seven jobs; it is now `11a`–`11g`, each 55–150 lines, in a graph with no cycles:
+**The app layer is seven files, and the split follows one rule** (#85). It was one 529-line
+module doing seven jobs; it is now seven of 55–150 lines, in a graph with no cycles:
 
 ```
-11a-state ← 11b-geometry ← 11c-compositing
-                        ← 11e-controls ← 11g-plan ← 11d-history
-                                       ← 11f-preview
+state ← geometry ← compositing
+                 ← controls ← plan ← history
+                            ← preview
 ```
 
 The rule that decided where each binding went is the one the module boundary imposes anyway:
@@ -37,17 +37,20 @@ for the test suite, which reaches the code by name; nothing in the app imports f
 
 Three things to know before editing:
 
-- **A module cannot assign another module's binding.** The shared mutable state — `busy`,
-  `cancelling`, `queuedReplan`, `lastGifPalette`, `pausedAt`, `zoom` — lives in `js/11-app.js`
-  and is changed through `renderStarted()`, `renderFinished()`, `requestCancel()`,
-  `takeQueuedReplan()`, `setLastGifPalette()`, `togglePlay()` and `resetZoom()`.
+- **A module cannot assign another module's binding**, so every mutable value lives beside what
+  changes it: `busy`, `cancelling` and `lastGifPalette` in `js/state.js`, `queuedReplan` in
+  `js/plan.js`, `pausedAt` and `zoom` in `js/preview.js`. Each is changed through a named
+  transition — `renderStarted()`, `renderFinished()`, `requestCancel()`, `takeQueuedReplan()`,
+  `setLastGifPalette()`, `togglePlay()`, `resetZoom()` — rather than by assignment from outside.
+  `test/modules.spec.js` enforces this; getting it wrong is a `TypeError` on one line, thrown
+  only when that line runs.
 - **`gifWorkerSource()` stringifies functions**, and the worker it builds has no imports and no
   page. Anything listed there may reference only what is listed alongside it. `Function.prototype
   .toString()` does *not* include the `export` keyword, so that part is unaffected — but a
   declaration written *inside* the worker's template literal is source text, not a declaration,
   and must not be given one.
 - **Module-local functions cannot be replaced from outside**, which a test needs in order to
-  substitute a broken encoder. `EXPORTERS` in `js/12-export.js` is the dispatch table `render()`
+  substitute a broken encoder. `EXPORTERS` in `js/export.js` is the dispatch table `render()`
   goes through, and is that seam.
 
 What has *not* changed: no user data leaves the browser. There are no network calls in the
@@ -79,28 +82,37 @@ The script is divided by numbered banner comments. Keep them; they are the map.
 
 Each row is a file in `js/`, named for its number and contents, and an ES module.
 
-| Section | Contents |
+| File | Contents |
 |---|---|
-| 0 | Runtime icon rasterisation (header `<svg>` → PNG `apple-touch-icon`) |
-| 1 | GIF decoder: LZW, interlace, disposal methods, frame flattening |
-| 2 | Universal source loader: GIF / `ImageDecoder` / video / stills |
-| 3 | Timeline merge — the core of the tool |
-| 4 | GIF quantizer (exact palette or median cut) + GIF encoder |
-| 5 | Animated WebP muxer |
-| 6 | APNG muxer |
-| 7 | ISOBMFF muxer → MP4 and animated AVIF, plus AV1 sequence-header parsing |
-| 8 | EBML muxer → WebM |
-| 9 | WebCodecs encode driver + output self-verification |
-| 10 | Format registry with capability probing |
-| 11a | App state, the DOM handles taken at load, and the render-lifecycle transitions |
-| 11b | Placement geometry: where each layer sits, and the output size that follows |
-| 11c | Compositing, the canvas helpers, and the snapshots a render draws from |
-| 11d | Placement history — undo and redo, and the funnel every move passes through |
-| 11e | Pushing state back into the controls, and announcing what moved |
-| 11f | The preview: the animation loop, zoom, and the merged-timeline strip |
-| 11g | The plan: building the merged timeline and reporting what the merge did |
-| 12 | Export entry points, one per container |
-| 13 | UI wiring |
+| `util.js` | `$`, `esc`, `idle` — used everywhere, owned by nothing |
+| `icon.js` | The `apple-touch-icon`, rasterised from the header `<svg>` |
+| `gif-decoder.js` | LZW, interlace, disposal methods, frame flattening |
+| `source-loader.js` | GIF / `ImageDecoder` / video / stills |
+| `timeline.js` | Timeline merge — the core of the tool |
+| `gif-encoder.js` | GIF quantizer (exact palette or median cut) + encoder + its Worker |
+| `webp.js` | Animated WebP muxer |
+| `apng.js` | APNG muxer |
+| `isobmff.js` | MP4 and animated AVIF, plus AV1 sequence-header parsing |
+| `webm.js` | EBML muxer |
+| `webcodecs.js` | Encode driver + output self-verification |
+| `formats.js` | Format registry with capability probing |
+| `state.js` | Shared state, DOM handles, render-lifecycle transitions |
+| `geometry.js` | Where each layer sits, and the output size that follows |
+| `compositing.js` | Drawing both layers, and the snapshots a render draws from |
+| `history.js` | Undo and redo, and the funnel every move passes through |
+| `controls.js` | Pushing state back into controls, and announcing what moved |
+| `preview.js` | The animation loop, zoom, and the merged-timeline strip |
+| `plan.js` | Building the merged timeline and reporting what the merge did |
+| `export.js` | Export entry points, one per container |
+| `ui.js` | UI wiring |
+
+The files were numbered `00-`–`13-` until #86, and that numbering is worth understanding before
+anyone reintroduces it. It was **load order**, back when `index.html` carried one `<script>` tag
+per file. Once the import graph decided load order (#78) the numbers described nothing the
+runtime read — and they were never a layering either: `gif-encoder` imports from `compositing`
+because the GIF Worker carries `composite` across as source (#63), and `webcodecs` imports
+`makeRenderCanvas`. Five imports ran "upwards" against the numbering. `11a`–`11g` was the scheme
+breaking down in public.
 
 ---
 
@@ -211,7 +223,7 @@ swallowed it. `XMLSerializer` writes the namespace. The test named for the icon 
 `link[rel="icon"], link[rel="apple-touch-icon"]`, and the first of those is the static one in
 `<head>`, so it passed either way and could not fail.
 
-**Section 0 is wrapped in try/catch, and must stay that way.** It is the first module `main.js`
+**`icon.js` is wrapped in try/catch, and must stay that way.** It is the first module `main.js`
 imports, and a module that throws during evaluation fails the import that pulled it in — so a
 missing header would cost the whole app, where the old `<script>` tag would have cost only the
 icon. There is a test that breaks the serialiser and asserts the app comes up regardless.

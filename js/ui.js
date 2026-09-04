@@ -1,8 +1,8 @@
 import { $, esc } from "./util.js";
-import { loadSource } from "./02-source-loader.js";
-import { FORMATS, buildFormats, onFormat } from "./10-formats.js";
-import { S, busy, requestCancel, stage } from "./11a-state.js";
-import { setLayerPos } from "./11b-geometry.js";
+import { announcePosition, syncLayerControls } from "./controls.js";
+import { render } from "./export.js";
+import { FORMATS, buildFormats, onFormat } from "./formats.js";
+import { setLayerPos } from "./geometry.js";
 import {
   beginChange,
   endChange,
@@ -11,14 +11,14 @@ import {
   redo,
   undo,
   updateHistoryButtons
-} from "./11d-history.js";
-import { announcePosition, syncLayerControls } from "./11e-controls.js";
-import { loop, resetZoom, stepZoom, togglePlay } from "./11f-preview.js";
-import { replan } from "./11g-plan.js";
-import { render } from "./12-export.js";
+} from "./history.js";
+import { replan } from "./plan.js";
+import { loop, resetZoom, stepZoom, togglePlay } from "./preview.js";
+import { loadSource } from "./source-loader.js";
+import { S, busy, requestCancel, stage } from "./state.js";
 
 /* =====================================================================
-   13. UI WIRING
+   UI WIRING
    ===================================================================== */
 export function renderSlot(i, statusText, isError){
   const slot = document.querySelector(`.slot[data-i="${i}"]`);

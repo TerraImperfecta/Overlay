@@ -1,7 +1,7 @@
-import { S } from "./11a-state.js";
+import { S } from "./state.js";
 
 /* =====================================================================
-   11b. PLACEMENT GEOMETRY
+   PLACEMENT GEOMETRY
    ---------------------------------------------------------------------
    Where each layer sits, and how big the output is because of it. Reads
    S and nothing else, so it is the bottom of this section's graph.

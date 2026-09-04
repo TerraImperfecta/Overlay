@@ -1,11 +1,11 @@
 import { $ } from "./util.js";
-import { frameAt } from "./03-timeline.js";
-import { Cancelled, cancelling } from "./11a-state.js";
-import { layerBox } from "./11b-geometry.js";
-import { composite, compositeInto, renderContext } from "./11c-compositing.js";
+import { composite, compositeInto, renderContext } from "./compositing.js";
+import { layerBox } from "./geometry.js";
+import { Cancelled, cancelling } from "./state.js";
+import { frameAt } from "./timeline.js";
 
 /* =====================================================================
-   4. GIF QUANTIZER + ENCODER
+   GIF QUANTIZER + ENCODER
    ===================================================================== */
 export function buildPalette(framesRGBA, reserve){
   const cap = reserve ? 255 : 256;

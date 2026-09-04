@@ -1,11 +1,12 @@
 import { $, esc, idle } from "./util.js";
-import { gifFromFrames, makeGifWorker, runGifWorker } from "./04-gif-encoder.js";
-import { anmfPayload, muxWebP } from "./05-webp.js";
-import { muxAPNG } from "./06-apng.js";
-import { av1ConfigRecord, box, muxISOBMFF } from "./07-isobmff.js";
-import { muxWebM } from "./08-webm.js";
-import { VERIFY_MIME, encodeWithVideoEncoder, verifyBlob } from "./09-webcodecs.js";
-import { currentFormat } from "./10-formats.js";
+import { muxAPNG } from "./apng.js";
+import { makeRenderCanvas, renderView, workerView } from "./compositing.js";
+import { currentFormat } from "./formats.js";
+import { geometry } from "./geometry.js";
+import { gifFromFrames, makeGifWorker, runGifWorker } from "./gif-encoder.js";
+import { av1ConfigRecord, box, muxISOBMFF } from "./isobmff.js";
+import { replan, takeQueuedReplan } from "./plan.js";
+import { loop } from "./preview.js";
 import {
   Cancelled,
   S,
@@ -16,14 +17,13 @@ import {
   renderFinished,
   renderStarted,
   setLastGifPalette
-} from "./11a-state.js";
-import { geometry } from "./11b-geometry.js";
-import { makeRenderCanvas, renderView, workerView } from "./11c-compositing.js";
-import { loop } from "./11f-preview.js";
-import { replan, takeQueuedReplan } from "./11g-plan.js";
+} from "./state.js";
+import { VERIFY_MIME, encodeWithVideoEncoder, verifyBlob } from "./webcodecs.js";
+import { muxWebM } from "./webm.js";
+import { anmfPayload, muxWebP } from "./webp.js";
 
 /* =====================================================================
-   12. EXPORT
+   EXPORT
    ===================================================================== */
 
 export async function render(){

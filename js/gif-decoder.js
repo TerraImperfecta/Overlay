@@ -1,7 +1,7 @@
 import { $ } from "./util.js";
 
 /* =====================================================================
-   1. GIF DECODER
+   GIF DECODER
    ===================================================================== */
 /* A GIF header may declare any size up to 65535 a side, and nothing downstream
    questions it. flattenGIF allocates W*H*4 for the canvas and another copy per

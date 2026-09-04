@@ -1,8 +1,8 @@
 import { $ } from "./util.js";
-import { flattenGIF, parseGIF } from "./01-gif-decoder.js";
+import { flattenGIF, parseGIF } from "./gif-decoder.js";
 
 /* =====================================================================
-   2. UNIVERSAL SOURCE LOADER
+   UNIVERSAL SOURCE LOADER
    ===================================================================== */
 export const VIDEO_FPS = 20, VIDEO_MAX_FRAMES = 200, VIDEO_MAX_EDGE = 640;
 

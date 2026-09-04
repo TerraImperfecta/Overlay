@@ -1,7 +1,7 @@
 import { $, idle } from "./util.js";
 
 /* =====================================================================
-   11a. APP STATE
+   APP STATE
    ---------------------------------------------------------------------
    Everything the rest of the app shares, and the DOM handles taken once
    at load.
@@ -13,9 +13,6 @@ import { $, idle } from "./util.js";
    the variable it sets.
    ===================================================================== */
 
-/* =====================================================================
-   11. APP STATE + COMPOSITING
-   ===================================================================== */
 export const S = {
   src:[null,null], blend:"source-over", opacity:1,
   /* Placement per layer, in "base-natural" units: x and y are the layer's

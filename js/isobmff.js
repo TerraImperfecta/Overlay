@@ -1,5 +1,5 @@
 /* =====================================================================
-   7. ISOBMFF MUXER  →  MP4 and animated AVIF
+   ISOBMFF MUXER  →  MP4 and animated AVIF
    ===================================================================== */
 export const cat = list => { let n = 0; for (const a of list) n += a.length;
   const o = new Uint8Array(n); let p = 0; for (const a of list){ o.set(a,p); p += a.length; } return o; };

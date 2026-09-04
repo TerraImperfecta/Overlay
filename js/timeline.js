@@ -1,5 +1,5 @@
 /* =====================================================================
-   3. TIMELINE MERGE
+   TIMELINE MERGE
       Boundaries stay in exact milliseconds. Only the GIF path quantises
       to centiseconds, and it carries the rounding error forward.
    ===================================================================== */

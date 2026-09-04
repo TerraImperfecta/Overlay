@@ -1,9 +1,9 @@
 import { $ } from "./util.js";
-import { breathe } from "./11a-state.js";
-import { makeRenderCanvas } from "./11c-compositing.js";
+import { makeRenderCanvas } from "./compositing.js";
+import { breathe } from "./state.js";
 
 /* =====================================================================
-   9. WEBCODECS ENCODE DRIVER
+   WEBCODECS ENCODE DRIVER
    ===================================================================== */
 export async function encodeWithVideoEncoder(fmt, W, H, plan, geom, quality, say, view){
   const R = makeRenderCanvas(W, H, geom, true, view);

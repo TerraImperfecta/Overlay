@@ -1,11 +1,11 @@
 import { $ } from "./util.js";
-import { S, emptyEl, sctx, stage, stageBox } from "./11a-state.js";
-import { geometry } from "./11b-geometry.js";
-import { composite } from "./11c-compositing.js";
-import { syncPlacementFields } from "./11e-controls.js";
+import { composite } from "./compositing.js";
+import { syncPlacementFields } from "./controls.js";
+import { geometry } from "./geometry.js";
+import { S, emptyEl, sctx, stage, stageBox } from "./state.js";
 
 /* =====================================================================
-   11f. THE PREVIEW
+   THE PREVIEW
    ---------------------------------------------------------------------
    The animation loop, how the stage is scaled to the panel, and the
    merged-timeline strip beneath it. Zoom is a property of looking rather

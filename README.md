@@ -53,12 +53,14 @@ npm run fixtures && npm run fixtures -- --stress
 .venv/bin/python test/validate_containers.py
 ```
 
-`js/` is one file per numbered section, 0–13, named for what it holds: icon, GIF decoder,
-source loader, timeline merge, GIF quantizer/encoder, WebP muxer, APNG muxer, ISOBMFF muxer
-(MP4 + AVIF), EBML muxer (WebM), WebCodecs driver, format registry, then section 11 as `11a`–`11g`
-(state, placement geometry, compositing, history, controls, preview, plan), export, and UI wiring
-— plus `util.js`, which holds the three helpers everything uses. Each file
-keeps its banner comment; the numbers are the map, and PLAN.md refers to them.
+`js/` is one file per concern, named for what it holds: `icon`, `gif-decoder`, `source-loader`,
+`timeline`, `gif-encoder`, `webp`, `apng`, `isobmff` (MP4 + AVIF), `webm`, `webcodecs`, `formats`,
+then the app layer as `state`, `geometry`, `compositing`, `history`, `controls`, `preview` and
+`plan`, then `export` and `ui` — plus `util.js`, which holds the three helpers everything uses.
+
+The files were numbered `00-`–`13-` until #86. The numbers were load order when `index.html` had
+one script tag per file; once imports decided that, they described nothing — and they were not
+even a layering, since `gif-encoder` and `webcodecs` both legitimately import from the app layer.
 
 They are **ES modules**. `index.html` loads one script, `js/main.js`, and the import graph
 decides what else loads and in what order — there is no ordering to get right by hand, and

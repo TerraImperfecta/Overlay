@@ -1,9 +1,9 @@
-import { frameAt } from "./03-timeline.js";
-import { S } from "./11a-state.js";
-import { layerBox } from "./11b-geometry.js";
+import { layerBox } from "./geometry.js";
+import { S } from "./state.js";
+import { frameAt } from "./timeline.js";
 
 /* =====================================================================
-   11c. COMPOSITING
+   COMPOSITING
    ---------------------------------------------------------------------
    Drawing the two layers into one frame, and the snapshots that let a
    render draw from state the user can no longer change (#27).
