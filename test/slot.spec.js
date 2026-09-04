@@ -70,6 +70,57 @@ test.beforeEach(async ({ page }) => {
   await page.waitForFunction(() => document.querySelector("#fmt")?.options.length > 0);
 });
 
+test("rendering a slot fetches nothing that is not there", async ({ page }) => {
+  // renderSlot interpolated the thumbnail into src="${s.thumb}", and loadSource
+  // returns thumb: null -- so a slot rendered before its thumbnail existed asked
+  // the server for "/null" and got a 404 (#88). accept() attaches one first, so
+  // no user ever saw it; five spec files build sources directly and hit it on
+  // every run, and nothing reported it. A 404 is not a console error, which is
+  // why the page-load smoke test never noticed either.
+  const failed = [];
+  page.on("response", (r) => { if (!r.ok()) failed.push(`${r.status()} ${new URL(r.url()).pathname}`); });
+
+  await page.goto("/index.html");
+  await page.waitForFunction(() => document.querySelector("#fmt")?.options.length > 0);
+
+  const r = await page.evaluate(async () => {
+    // Deliberately the direct path, not accept(): that is the one that leaves
+    // the thumbnail unset, and the one the suite itself uses everywhere.
+    const buf = await (await fetch("/corpus/05-subrect.gif")).arrayBuffer();
+    const src = await loadSource(new File([buf], "05-subrect.gif", { type: "image/gif" }), () => {});
+    if (S.src[0]) disposeSource(0);
+    S.src[0] = src;
+    renderSlot(0);
+    const img = document.querySelector('.slot[data-i="0"] .thumb');
+    return { thumb: src.thumb, hasSrc: img.hasAttribute("src"),
+             height: Math.round(img.getBoundingClientRect().height) };
+  });
+  await page.waitForTimeout(300);      // let any stray request be made and fail
+
+  expect(r.thumb).toBeNull();          // the condition this is about
+  expect(r.hasSrc, 'an <img> with src="null" fetches "/null"').toBe(false);
+  // The box still holds its place, so omitting the attribute costs no layout.
+  expect(r.height).toBe(56);
+  expect(failed).toEqual([]);
+});
+
+test("the real drop path does attach a thumbnail", async ({ page }) => {
+  // The other half: omitting src must not mean the thumbnail stopped appearing
+  // where one is expected.
+  await page.goto("/index.html");
+  await page.waitForFunction(() => document.querySelector("#fmt")?.options.length > 0);
+  const r = await page.evaluate(async (h) => {
+    eval(h);
+    await drop(0, "05-subrect.gif");
+    await settle(0);
+    const img = document.querySelector('.slot[data-i="0"] .thumb');
+    return { hasSrc: img.hasAttribute("src"), src: (img.getAttribute("src") || "").slice(0, 5) };
+  }, HELPERS);
+
+  expect(r.hasSrc).toBe(true);
+  expect(r.src).toBe("blob:");
+});
+
 test("three files in succession leave exactly one thumbnail each time",
   async ({ page }) => {
     const rows = await page.evaluate(async (helpers) => {

@@ -27,8 +27,15 @@ export function renderSlot(i, statusText, isError){
   const meta = statusText
     ? `<span class="meta${isError ? " warn" : ""}">${esc(statusText)}</span>`
     : `<span class="meta">${s ? esc(s.meta) : ""}</span>`;
+  /* The src is omitted rather than set to a null that stringifies to "null",
+     which the browser then fetches -- a real 404 on every slot rendered before
+     its thumbnail exists (#88). accept() attaches one before it gets here, so
+     no user ever saw it; anything constructing a source directly did, on every
+     run, and nothing reported it. The .thumb rule paints a checkerboard, so the
+     box keeps its size either way. */
+  const thumb = s && s.thumb ? ` src="${s.thumb}"` : "";
   slot.innerHTML = label + (s
-    ? `<img class="thumb" src="${s.thumb}" alt=""><span class="name">${esc(s.name)}</span>${meta}`
+    ? `<img class="thumb"${thumb} alt=""><span class="name">${esc(s.name)}</span>${meta}`
     : `<span class="hint">Drop a GIF, WebP, AVIF, APNG or video</span>${meta}`);
 }
 
