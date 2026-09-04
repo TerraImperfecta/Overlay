@@ -56,7 +56,7 @@ async function runAndCancel(formatId){
   const visibleWhileBusy = !document.querySelector("#cancel").hidden;
   document.querySelector("#cancel").click();
   const t0 = performance.now();
-  while (performance.now() - t0 < 30000){
+  while (performance.now() - t0 < 20000){
     await new Promise(r => setTimeout(r, 20));
     if (!document.querySelector("#render").disabled) break;
   }
@@ -122,6 +122,7 @@ test.describe("cancelling a render", () => {
 });
 
 test("the app is immediately usable after a cancel", async ({ page }) => {
+  test.setTimeout(90000);          // a cancelled render, then a complete one
   await setup(page, false);           // ordinary short plan, so this one finishes
   const r = await page.evaluate(async (helper) => {
     eval(helper);
@@ -138,7 +139,7 @@ test("the app is immediately usable after a cancel", async ({ page }) => {
     document.querySelector("#out").innerHTML = "";
     document.querySelector("#render").click();
     const t0 = performance.now();
-    while (performance.now() - t0 < 60000) {
+    while (performance.now() - t0 < 20000) {
       await new Promise((r) => setTimeout(r, 20));
       if (!document.querySelector("#render").disabled &&
           document.querySelector("#out").innerHTML) break;
@@ -165,7 +166,7 @@ test("a replan queued during a cancelled render still lands", async ({ page }) =
     const deferred = S.plan === before;
     document.querySelector("#cancel").click();
     const t0 = performance.now();
-    while (performance.now() - t0 < 30000) {
+    while (performance.now() - t0 < 20000) {
       await new Promise((r) => setTimeout(r, 20));
       if (!document.querySelector("#render").disabled) break;
     }

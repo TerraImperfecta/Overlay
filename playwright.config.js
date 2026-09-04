@@ -19,6 +19,10 @@ const PORT = Number(process.env.PORT || 8931);
 
 module.exports = defineConfig({
   testDir: "./test",
+  /* The default 30s is too tight for the heavy specs on a shared macOS runner,
+     where a pass that takes 1.3s locally has taken over 30s. Individual tests
+     still set their own budget where the work is proportional to a list. */
+  timeout: 60000,
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: 0,

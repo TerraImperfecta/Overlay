@@ -121,7 +121,7 @@ async function renderGif(page, outScale) {
     document.querySelector("#out").innerHTML = "";
     document.querySelector("#render").click();
     const t0 = performance.now();
-    while (performance.now() - t0 < 60000) {
+    while (performance.now() - t0 < 20000) {
       await new Promise((r) => setTimeout(r, 30));
       if (!document.querySelector("#render").disabled &&
           document.querySelector("#out").innerHTML) break;
@@ -223,7 +223,7 @@ test("a source with real colour depth forces median cut, and the readout reports
       document.querySelector("#out").innerHTML = "";
       document.querySelector("#render").click();
       const t0 = performance.now();
-      while (performance.now() - t0 < 60000) {
+      while (performance.now() - t0 < 20000) {
         await new Promise((r) => setTimeout(r, 30));
         if (!document.querySelector("#render").disabled &&
             document.querySelector("#out").innerHTML) break;
@@ -252,7 +252,7 @@ test("the readout does not carry over from a previous render", async ({ page }) 
     document.querySelector("#out").innerHTML = "";
     document.querySelector("#render").click();
     const t0 = performance.now();
-    while (performance.now() - t0 < 60000) {
+    while (performance.now() - t0 < 20000) {
       await new Promise((r) => setTimeout(r, 30));
       if (!document.querySelector("#render").disabled &&
           document.querySelector("#out").innerHTML) break;
