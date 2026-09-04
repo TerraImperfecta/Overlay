@@ -43,6 +43,17 @@ output format to `out/`, alongside the plan they were meant to encode. Add
 and `stts` run-length compression. `test/inspect_container.py` then reads per-frame
 timing straight out of an MP4 or WebM.
 
+`npm run verify:deployed` checks the real origin rather than a local copy of it: that every
+file the page needs matches this checkout byte for byte (so a stale or half-applied publish is
+caught), that they are served as the right types, that `http` redirects to `https`, and that the
+site boots and exports a GIF that passes its own verification. It waits for a lagging deploy
+rather than failing on one, and CI runs it after every publish. Point it anywhere:
+
+```
+npm run verify:deployed
+npm run verify:deployed -- http://localhost:8080
+```
+
 That parser is ours, so it corroborates rather than confirms. `test/validate_containers.py`
 reads the same files with FFmpeg's own demuxer — what `ffprobe` is a thin CLI over — and
 checks every timestamp against the plan they were exported from:

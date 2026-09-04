@@ -9,7 +9,8 @@
     "test": "playwright test",
     "corpus": "python3 corpus/make_corpus.py",
     "fixtures": "node test/export-fixtures.js",
-    "bench:gif": "node test/bench-gif.js"
+    "bench:gif": "node test/bench-gif.js",
+    "verify:deployed": "node test/verify-deployed.js"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.0"

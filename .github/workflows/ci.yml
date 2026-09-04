@@ -155,3 +155,31 @@ jobs:
 
       - id: deployment
         uses: actions/deploy-pages@v5
+
+  verify:
+    name: The deployed site works
+    needs: [deploy]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci --prefer-offline --no-audit --fund=false
+
+      - run: npx playwright install --with-deps chromium
+
+      # Everything else is checked against test/serve.js on localhost, which
+      # shares nothing with Pages but the bytes. This is the only thing that
+      # sees content types, the http -> https redirect, the CNAME, and whether
+      # the deploy actually landed -- and #88 was a 404 the whole suite missed
+      # that three lines against production found at once.
+      #
+      # It waits for the live copy to match this checkout byte for byte, so a
+      # half-applied or lagging publish is a wait rather than a false pass.
+      - name: Verify overlay.immanuelqrw.dev
+        run: npm run verify:deployed
