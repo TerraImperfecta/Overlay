@@ -79,14 +79,32 @@ async function firstFrame(blob, mime, W, H){
         v.onloadeddata = res; v.onerror = () => rej(new Error("video refused"));
         setTimeout(() => rej(new Error("video timed out")), 8000);
       });
-      // loadeddata is not enough: drawImage at that point paints nothing at all
-      // (every pixel comes back transparent). A seek forces a frame to be
-      // presented before it can be read.
+      // loadeddata is not enough: drawImage at that point paints nothing at all,
+      // every pixel coming back transparent. A seek asks for a frame to be
+      // presented -- but "seeked" only means the seek finished, not that the
+      // frame has reached the compositor, so on a loaded machine the draw can
+      // still come back blank. That is a flake, and it failed on CI after
+      // passing locally and on the PR.
       await new Promise((res, rej) => {
         v.onseeked = res; v.currentTime = 0.001;
         setTimeout(() => rej(new Error("video seek timed out")), 8000);
       });
-      cx.drawImage(v, 0, 0, W, H);
+      // Draw until a frame actually arrives. A blank canvas is all zeroes; any
+      // decoded frame of an opaque format has alpha 255 everywhere, so one
+      // non-zero byte in a single row is proof something was painted. Probing a
+      // row rather than the whole frame keeps the retry cheap.
+      //
+      // requestVideoFrameCallback is deliberately not used here: on a paused
+      // video it does not fire, so it costs its full timeout on every format.
+      let painted = false;
+      for (let attempt = 0; attempt < 60 && !painted; attempt++){
+        cx.clearRect(0, 0, W, H);
+        cx.drawImage(v, 0, 0, W, H);
+        const row = cx.getImageData(0, 0, W, 1).data;
+        for (let i = 0; i < row.length; i++) if (row[i]){ painted = true; break; }
+        if (!painted) await new Promise(res => setTimeout(res, 25));
+      }
+      if (!painted) throw new Error("video never presented a frame to draw");
     } finally { URL.revokeObjectURL(url); }
   } else {
     const dec = new ImageDecoder({data: await blob.arrayBuffer(), type: mime});
