@@ -33,8 +33,8 @@ module.exports = defineConfig({
   },
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
-    { name: "firefox", use: { ...devices["Desktop Firefox"] }, testMatch: /(degrade|gif-worker|settings)\.spec\.js/ },
-    { name: "webkit", use: { ...devices["Desktop Safari"] }, testMatch: /(degrade|gif-worker|settings)\.spec\.js/ },
+    { name: "firefox", use: { ...devices["Desktop Firefox"] }, testMatch: /(degrade|gif-worker|settings|interface)\.spec\.js/ },
+    { name: "webkit", use: { ...devices["Desktop Safari"] }, testMatch: /(degrade|gif-worker|settings|interface)\.spec\.js/ },
   ],
   webServer: {
     command: `node test/serve.js ${PORT}`,

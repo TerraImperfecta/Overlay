@@ -11,6 +11,14 @@
     --ground:#151827; --panel:#1D2135; --panel-2:#252A42; --rule:#343A5C;
     --ink:#EDEEF5; --ink-dim:#8D93B5;
     --a:#FF3366; --b:#33CCCC; --c:#FFCC00;
+    /* --a as a fill clears nothing in particular; --a as *text* was 4.48:1 on
+       --panel and 3.98:1 on --panel-2, under AA either way. --a-ink is the same
+       pink lightened until the worst of the three grounds passes (4.73:1), so
+       lanes and swatches keep the saturated brand colour and prose stays legible. */
+    --a-ink:#FF5A82;
+    /* The selected state of a control that is not about base, overlay or output.
+       It used to be --c, which is why --c stopped meaning anything. */
+    --sel:#39406A;
     --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
     --ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   }
@@ -25,8 +33,19 @@
      font-weight:600;margin:0}
   .tag{font-family:var(--mono);font-size:11px;color:var(--ink-dim);letter-spacing:.06em}
   .lede{color:var(--ink-dim);max-width:64ch;margin:8px 0 20px;font-size:13px}
-  .grid{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:16px;align-items:start}
-  @media(max-width:860px){.grid{grid-template-columns:minmax(0,1fr)}}
+  /* Both columns are told to fill the row, so the taller one -- in practice the
+     controls -- sets the height and the preview grows into it instead of leaving
+     the bottom half of the page empty. */
+  .grid{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:16px;align-items:stretch}
+  .col{display:flex;flex-direction:column;gap:16px;min-width:0}
+  .col.main > .panel.grow{flex:1;display:flex;flex-direction:column;min-height:0}
+  @media(max-width:860px){
+    .grid{grid-template-columns:minmax(0,1fr)}
+    /* Stacked, there is no second column to match, so an unbounded preview would
+       push the controls off the screen. */
+    .col.main > .panel.grow{flex:none}
+    .stage{min-height:300px}
+  }
   .panel{background:var(--panel);border:1px solid var(--rule);border-radius:3px}
   .panel h2{font-family:var(--mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase;
      color:var(--ink-dim);margin:0;padding:9px 12px;border-bottom:1px solid var(--rule);font-weight:600}
@@ -35,9 +54,11 @@
   .slot{border:1px dashed var(--rule);border-radius:3px;background:var(--panel-2);padding:10px;
         cursor:pointer;min-height:120px;display:flex;flex-direction:column;gap:7px;
         transition:border-color .12s,background .12s}
-  .slot:hover,.slot.hot{border-color:var(--c);background:#2A3050}
+  .slot:hover,.slot.hot{background:#2A3050}
+  .slot[data-i="0"]:hover,.slot[data-i="0"].hot{border-color:var(--a)}
+  .slot[data-i="1"]:hover,.slot[data-i="1"].hot{border-color:var(--b)}
   .slot .lbl{font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase}
-  .slot[data-i="0"] .lbl{color:var(--a)}
+  .slot[data-i="0"] .lbl{color:var(--a-ink)}
   .slot[data-i="1"] .lbl{color:var(--b)}
   .slot .hint{color:var(--ink-dim);font-size:12px;margin:auto 0}
   .slot .meta{font-family:var(--mono);font-size:11px;color:var(--ink-dim);margin-top:auto}
@@ -45,15 +66,41 @@
   .slot .thumb{width:100%;height:56px;object-fit:contain;border-radius:2px;background:
     conic-gradient(#20243a 0 25%,#191d30 0 50%,#20243a 0 75%,#191d30 0) 0/12px 12px}
   input[type=file]{display:none}
-  .stage{display:flex;align-items:center;justify-content:center;padding:16px;min-height:260px;
+  .stage{position:relative;display:flex;align-items:center;justify-content:center;padding:16px;
+    min-height:340px;flex:1;overflow:hidden;
     background:conic-gradient(#20243a 0 25%,#191d30 0 50%,#20243a 0 75%,#191d30 0) 0/16px 16px;
     border-bottom:1px solid var(--rule)}
-  #stage{max-width:100%;image-rendering:pixelated;cursor:grab;border-radius:2px;
+  /* Out of flow on purpose. As a flex item the canvas contributed its own size
+     to the column, so fitting it to the panel made the panel taller, which made
+     the fit larger, which made the canvas bigger again -- a loop that settled at
+     different scales in different engines and ran to the maximum in Firefox.
+     Absolute inside the relative .stage, it can no longer size its ancestors,
+     and inset:0 with margin:auto centres it at whatever size it is given. */
+  #stage{position:absolute;inset:0;margin:auto;
+    image-rendering:pixelated;cursor:grab;border-radius:2px;
     box-shadow:0 0 0 1px rgba(255,255,255,.07)}
   #stage.drag{cursor:grabbing}
+  #stage[hidden]{display:none}
+
+  /* Before anything is loaded the stage was simply blank, which told a first
+     visitor nothing about where to begin. */
+  .empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;gap:9px;text-align:center;padding:24px;pointer-events:none}
+  /* .empty's own display would otherwise win over the hidden attribute. */
+  .empty[hidden]{display:none}
+  .empty .up{font-size:17px;color:var(--ink-dim);line-height:1}
+  .empty .big{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--ink)}
+  .empty .sub{font-size:12px;color:var(--ink-dim);max-width:36ch;line-height:1.6}
+  .empty .fmts{font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--ink-dim);
+    text-transform:uppercase;opacity:.75}
   .stagebar{display:flex;gap:10px;align-items:center;padding:8px 12px;flex-wrap:wrap;
     font-family:var(--mono);font-size:11px;color:var(--ink-dim)}
   .stagebar .sep{flex:1}
+  .zoom{display:flex;align-items:center;gap:4px}
+  .zoom button{width:auto;padding:4px 9px;font-family:var(--mono);font-size:11px;line-height:1.2}
+  .zoom .pct{min-width:54px;text-align:center;color:var(--ink);font-variant-numeric:tabular-nums}
+  .zoom button[aria-pressed=true]{background:var(--sel);border-color:#4A5285;color:var(--ink)}
   #timeline{width:100%;height:118px;display:block}
   .legend{display:flex;gap:16px;padding:0 12px 10px;font-family:var(--mono);font-size:10px;
     letter-spacing:.1em;text-transform:uppercase;color:var(--ink-dim);flex-wrap:wrap}
@@ -66,33 +113,56 @@
   select,button,input[type=number]{font-family:var(--ui);font-size:13px;color:var(--ink);
     background:var(--panel-2);border:1px solid var(--rule);border-radius:2px;padding:7px 8px;width:100%}
   select:focus-visible,button:focus-visible,input:focus-visible,.slot:focus-visible{
-    outline:2px solid var(--c);outline-offset:1px}
-  input[type=range]{width:100%;accent-color:var(--c);background:transparent}
+    outline:2px solid var(--ink);outline-offset:1px}
+  input[type=range]{width:100%;accent-color:var(--ink-dim);background:transparent}
   input[type=color]{width:100%;height:32px;padding:2px;background:var(--panel-2);
     border:1px solid var(--rule);border-radius:2px}
   .val{font-family:var(--mono);font-size:11px;color:var(--ink);float:right}
   .seg{display:grid;grid-template-columns:1fr 1fr;gap:6px}
   .seg button{padding:6px}
-  .seg button[aria-pressed=true]{background:var(--c);color:#151827;border-color:var(--c);font-weight:600}
+  .seg button[aria-pressed=true]{background:var(--sel);color:var(--ink);
+    border-color:#4A5285;font-weight:600}
+  /* The one segmented control that really is about the two lanes. */
+  .seg #lyBase[aria-pressed=true]{background:var(--a);color:#151827;border-color:var(--a)}
+  .seg #lyOver[aria-pressed=true]{background:var(--b);color:#151827;border-color:var(--b)}
   button{cursor:pointer}
   button:hover{border-color:var(--ink-dim)}
   .go{background:var(--c);color:#151827;border-color:var(--c);font-weight:600;padding:11px;
     font-family:var(--mono);letter-spacing:.12em;text-transform:uppercase;font-size:12px}
   .go:hover{filter:brightness(1.08)}
   .go:disabled{opacity:.4;cursor:not-allowed;filter:none}
-  .go.stop{background:transparent;color:var(--a);border-color:var(--a);margin-top:6px}
+  .go.stop{background:transparent;color:var(--a-ink);border-color:var(--a-ink);margin-top:6px}
   .ghost{background:transparent}
   .readout{font-family:var(--mono);font-size:11px;line-height:1.85;color:var(--ink-dim)}
   .readout b{color:var(--ink);font-weight:600}
-  .warn{color:var(--a)} .ok{color:var(--b)}
+
+  /* The plan is what tells you whether the merge did what you wanted, so it sits
+     under the timeline it describes rather than halfway down a panel of sliders,
+     and the output figures are the largest text on the page after the title. */
+  .plan{padding:11px 12px;background:var(--panel-2);border-top:1px solid var(--rule);
+    font-family:var(--mono)}
+  .plan .out{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+  .plan .out .k{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--c)}
+  .plan .fig{font-size:18px;font-weight:600;color:var(--c);line-height:1.15;
+    font-variant-numeric:tabular-nums}
+  .plan .fig .u{font-size:11px;font-weight:400;color:var(--ink-dim);margin-left:3px}
+  .plan .in{display:flex;gap:20px;flex-wrap:wrap;font-size:11px;color:var(--ink-dim);
+    margin-top:7px}
+  .plan .in .k{font-size:10px;letter-spacing:.14em;text-transform:uppercase;margin-right:6px}
+  .plan .in .base .k{color:var(--a-ink)}
+  .plan .in .over .k{color:var(--b)}
+  .plan .in b{color:var(--ink);font-weight:600}
+  .plan .status{font-size:11px;margin-top:8px;padding-top:8px;border-top:1px solid var(--rule)}
+  .plan .idle{font-size:11px;color:var(--ink-dim)}
+  .warn{color:var(--a-ink)} .ok{color:var(--b)}
   .note{font-size:12px;color:var(--ink-dim);margin-top:6px}
   #out{margin-top:12px}
   #out .prev{width:100%;border-radius:2px;display:block;background:
     conic-gradient(#20243a 0 25%,#191d30 0 50%,#20243a 0 75%,#191d30 0) 0/12px 12px}
   #out a.dl{display:block;text-align:center;margin-top:8px;text-decoration:none;
     font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;
-    padding:10px;border:1px solid var(--b);color:var(--b);border-radius:2px}
-  #out a.dl:hover{background:var(--b);color:#151827}
+    padding:10px;border:1px solid var(--c);color:var(--c);border-radius:2px}
+  #out a.dl:hover{background:var(--c);color:#151827}
   @media (prefers-reduced-motion: reduce){*{transition:none!important}}
 </style>
 </head>
@@ -121,13 +191,30 @@
   <input type="file" id="file1" accept="image/*,video/*">
 
   <div class="grid">
-    <div>
-      <div class="panel" style="margin-bottom:16px">
+    <div class="col main">
+      <div class="panel grow">
         <h2>Preview</h2>
-        <div class="stage"><canvas id="stage" width="320" height="240"></canvas></div>
+        <div class="stage">
+          <canvas id="stage" width="320" height="240"></canvas>
+          <div class="empty" id="empty">
+            <div class="up" aria-hidden="true">&#9650;</div>
+            <div class="big">Drop two animations above</div>
+            <p class="sub">The first is the base and sets the canvas; the second is
+              laid over it. Click a slot to browse instead.</p>
+            <div class="fmts">gif &middot; apng &middot; webp &middot; video</div>
+          </div>
+        </div>
         <div class="stagebar">
           <button id="play" class="ghost" style="width:auto;padding:5px 12px">Pause</button>
-          <span id="pos">0.00s</span><span class="sep"></span><span id="dims">—</span>
+          <span id="pos">0.00s</span>
+          <span class="sep"></span>
+          <span class="zoom">
+            <button id="zoomOut" class="ghost" aria-label="Zoom out">&minus;</button>
+            <span class="pct" id="zoomPct">—</span>
+            <button id="zoomIn" class="ghost" aria-label="Zoom in">+</button>
+            <button id="zoomFit" class="ghost" aria-pressed="true">Fit</button>
+          </span>
+          <span id="dims">—</span>
         </div>
       </div>
       <div class="panel">
@@ -138,11 +225,12 @@
           <span><i style="background:var(--c)"></i>Output frames</span>
           <span><i style="background:var(--b)"></i>Overlay frames</span>
         </div>
+        <div class="plan" id="readout"></div>
       </div>
     </div>
 
-    <div>
-      <div class="panel" style="margin-bottom:16px">
+    <div class="col">
+      <div class="panel">
         <h2>Sync</h2>
         <div class="pad">
           <div class="ctl">
@@ -160,11 +248,10 @@
             <label class="k" for="maxf">Frame budget <span id="maxfv" class="val"></span></label>
             <input type="range" id="maxf" min="24" max="400" step="8" value="180">
           </div>
-          <div class="readout" id="readout"></div>
         </div>
       </div>
 
-      <div class="panel" style="margin-bottom:16px">
+      <div class="panel">
         <h2>Composite</h2>
         <div class="pad">
           <div class="ctl"><label class="k" for="blend">Blend mode</label>
@@ -178,7 +265,7 @@
           <div class="ctl"><label class="k" for="op">Overlay opacity <span id="opv" class="val"></span></label>
             <input type="range" id="op" min="0" max="100" value="100"></div>
           <div class="ctl"><label class="k">Move and size</label>
-            <div class="seg"><button id="lyBase" aria-pressed="false">Base</button>
+            <div class="seg layer"><button id="lyBase" aria-pressed="false">Base</button>
             <button id="lyOver" aria-pressed="true">Overlay</button></div></div>
           <div class="ctl"><label class="k" for="sc">Layer size <span id="scv" class="val"></span></label>
             <input type="range" id="sc" min="10" max="300" value="100"></div>
@@ -1314,6 +1401,50 @@ const S = {
   playing:true, t0:performance.now(), plan:null
 };
 const stage = $("#stage"), sctx = stage.getContext("2d", {willReadFrequently:true});
+const stageBox = $(".stage"), emptyEl = $("#empty");
+
+/* The preview used to be pinned to the source's natural size below 560px, so a
+   32x32 GIF was shown as a 32px sprite in an 840px panel -- the subject of the
+   tool, and the thing being dragged, was the smallest element on the page.
+   Zoom is a property of looking, not of the file, so it is deliberately not
+   persisted and not part of the render snapshot. */
+const ZOOM_STEPS = [.1,.15,.25,.33,.5,.67,1,2,3,4,6,8,12,16,24,32];
+const ZOOM_MAX = 32;
+let zoom = null;                        /* null = fit to the panel */
+
+function fitZoom(g){
+  const box = stageBox.getBoundingClientRect();
+  const avail = { w: box.width - 32, h: box.height - 32 };   /* .stage padding */
+  if (!(avail.w > 0 && avail.h > 0 && g.w > 0 && g.h > 0)) return 1;
+  const raw = Math.min(avail.w/g.w, avail.h/g.h);
+  if (!isFinite(raw) || raw <= 0) return 1;
+  /* Above 1:1 a whole-number scale keeps every source pixel the same size on
+     screen; a fractional one makes some of them a row wider than their
+     neighbours, which on pixel art reads as a defect in the file. */
+  return raw >= 1 ? Math.min(ZOOM_MAX, Math.floor(raw)) : raw;
+}
+const currentZoom = () => zoom === null ? fitZoom(geometry()) : zoom;
+
+/* The fit scale is whatever the panel happens to allow -- 23x here, 17x on a
+   shorter window -- so it is rarely one of the fixed steps. Without it on the
+   ladder, stepping out of fit and back in lands somewhere else than where you
+   started, which makes the buttons feel broken. */
+function zoomLadder(){
+  const fit = fitZoom(geometry());
+  const all = ZOOM_STEPS.some(v => Math.abs(v-fit) < 1e-6)
+    ? ZOOM_STEPS.slice() : ZOOM_STEPS.concat(fit);
+  return all.sort((a,b) => a-b);
+}
+
+function stepZoom(dir){
+  const cur = currentZoom(), ladder = zoomLadder();
+  const next = dir > 0
+    ? ladder.find(v => v > cur + 1e-6)
+    : ladder.filter(v => v < cur - 1e-6).pop();
+  if (next === undefined) return;             /* already at an end of the range */
+  zoom = next;
+  $("#zoomFit").setAttribute("aria-pressed", "false");
+}
 const tl = $("#timeline"), tctx = tl.getContext("2d");
 
 /* Where a layer sits, in base-natural units. The base's own size is the ruler
@@ -1413,8 +1544,19 @@ function loop(){
   const g = geometry();
   if (stage.width !== g.w || stage.height !== g.h){
     stage.width = g.w; stage.height = g.h;
-    stage.style.width = Math.min(g.w, 560) + "px";
   }
+  /* Recomputed every frame rather than on a resize event, so the preview also
+     follows the panel growing when a control below it appears or wraps. */
+  const z = currentZoom();
+  const cw = Math.max(1, Math.round(g.w*z)) + "px",
+        ch = Math.max(1, Math.round(g.h*z)) + "px";
+  if (stage.style.width !== cw){ stage.style.width = cw; stage.style.height = ch; }
+  const pct = (z >= 1 ? Math.round(z*100) : Math.round(z*1000)/10) + "%";
+  if ($("#zoomPct").textContent !== pct) $("#zoomPct").textContent = pct;
+
+  const loaded = !!(S.src[0] || S.src[1]);
+  if (emptyEl.hidden !== loaded) emptyEl.hidden = loaded;
+  if (stage.hidden === loaded) stage.hidden = !loaded;
   const plan = S.plan, dur = plan ? plan.outDur : 1000;
   const t = S.playing ? ((performance.now() - S.t0) % dur) : pausedAt;
   let snapped = t;
@@ -1488,7 +1630,7 @@ function replan(){
   const [A,B] = S.src, R = $("#readout");
   if (!A || !B){
     S.plan = null; $("#render").disabled = true; $("#syncNote").textContent = "";
-    R.innerHTML = '<span style="color:var(--ink-dim)">Load two files to see the plan.</span>';
+    R.innerHTML = '<div class="idle">Load two files to see the plan.</div>';
     return;
   }
   const plan = planTimeline(A, B, S.sync, S.maxFrames);
@@ -1501,11 +1643,20 @@ function replan(){
   const heavy = plan.count*ow*oh > 40e6;
   const dur = s => s.static ? "still" : (s.duration/1000).toFixed(2)+"s";
   R.innerHTML = `
-    <div>Base <b>${dur(A)}</b> · ${A.frames.length} frames · ${esc(A.kind)}</div>
-    <div>Overlay <b>${dur(B)}</b> · ${B.frames.length} frames · ${esc(B.kind)}${
-      plan.kB!==1?` · retimed ×${(1/plan.kB).toFixed(3)}`:""}</div>
-    <div>Output <b>${(plan.outDur/1000).toFixed(2)}s</b> · <b>${plan.count}</b> frames · ${ow}×${oh}</div>
-    <div class="${heavy?"warn":"ok"}">${plan.resampled
+    <div class="out">
+      <span class="k">Output</span>
+      <span class="fig">${(plan.outDur/1000).toFixed(2)}<span class="u">s</span></span>
+      <span class="fig">${plan.count}<span class="u">frames</span></span>
+      <span class="fig">${ow}×${oh}</span>
+    </div>
+    <div class="in">
+      <span class="base"><span class="k">Base</span><b>${dur(A)}</b> · ${
+        A.frames.length} frames · ${esc(A.kind)}</span>
+      <span class="over"><span class="k">Overlay</span><b>${dur(B)}</b> · ${
+        B.frames.length} frames · ${esc(B.kind)}${
+        plan.kB!==1?` · retimed ×${(1/plan.kB).toFixed(3)}`:""}</span>
+    </div>
+    <div class="status ${heavy?"warn":"ok"}">${plan.resampled
       ? "Resampled to fit the frame budget — raise it for exact timing."
       : heavy ? "Large output. Drop the output scale or frame budget."
       : "Exact frame boundaries preserved."}</div>`;
@@ -1926,6 +2077,13 @@ stage.addEventListener("pointermove", e => {
   if (S.canvasMode === "fit" || S.sel === 0) replan();
 });
 stage.addEventListener("pointerup", () => { dragging = false; stage.classList.remove("drag"); });
+
+$("#zoomIn").addEventListener("click", () => stepZoom(1));
+$("#zoomOut").addEventListener("click", () => stepZoom(-1));
+$("#zoomFit").addEventListener("click", () => {
+  zoom = null;
+  $("#zoomFit").setAttribute("aria-pressed", "true");
+});
 
 $("#maxfv").textContent = S.maxFrames+" max";
 $("#opv").textContent = "100%"; $("#scv").textContent = "100%";

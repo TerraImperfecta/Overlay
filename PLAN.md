@@ -49,7 +49,7 @@ The script is divided by numbered banner comments. Keep them; they are the map.
 | 8 | EBML muxer → WebM |
 | 9 | WebCodecs encode driver + output self-verification |
 | 10 | Format registry with capability probing |
-| 11 | App state, compositing, preview loop, timeline strip rendering |
+| 11 | App state, compositing, preview loop and zoom, timeline strip rendering |
 | 12 | Export entry points, one per container |
 | 13 | UI wiring |
 
@@ -273,6 +273,43 @@ will point at the box far faster than reading the spec again.
     some browsers *throw* on touching `localStorage` rather than returning null; there is a test
     that makes the accessor throw and confirms the app still starts and its controls still work.
     Reading settings never writes them, so an untouched visit leaves no trace.
+12. ~~Interface design pass.~~ **Done in #65.** The visual language was fine; the weighting was
+    not. Five things changed:
+
+    The preview was sized to the source and capped at 560px, so a 32×32 GIF was drawn 32px wide
+    inside an 840px panel — the subject of the tool, and the thing being dragged, was the
+    smallest element on the page. It now fits its panel, with the scale shown and −/+/Fit
+    controls. Above 1:1 the scale is a whole number so a source pixel stays square under
+    `image-rendering:pixelated`.
+
+    **The canvas is `position:absolute` inside `.stage`, and must stay that way.** In flow it is
+    a flex item, so fitting it to the panel made the panel taller, which made the fit larger,
+    which made the canvas bigger again. That loop settled at different scales in Chromium and
+    WebKit and ran to the 32× ceiling in Firefox, which made it look like a browser quirk rather
+    than a loop. There is a test asserting the computed `position`.
+
+    The fit scale is whatever the panel allows and so is rarely one of the fixed zoom steps;
+    `zoomLadder()` splices it in, or stepping out of fit and back would land somewhere else.
+
+    Zoom is a property of looking, not of the file: it is not persisted and not part of the
+    render snapshot. Dragging converts pointer pixels through the *displayed* width, so zooming
+    in makes a drag finer rather than wrong — asserted, because a hard-coded size would look
+    right until someone zoomed.
+
+    The columns are `align-items:stretch`, so the left one no longer stops around 830px against
+    the right's 1560. Stacked under 860px the preview stops growing, or it would push every
+    control off the screen.
+
+    **Yellow means the output and nothing else** — the OUTPUT lane, the plan's output figures,
+    Render, and the finished file's download link. It used to be the active segmented state,
+    every slider fill, the primary button *and* the OUTPUT lane, which is why it emphasised
+    nothing. Pink is base and cyan is overlay, including in the layer selector. A test
+    enumerates every element computing to that yellow and fails if one is not part of the
+    output; a rule like this decays silently otherwise.
+
+    `--a` as *text* was 4.48:1 on `--panel` and 3.98:1 on `--panel-2`, both under AA. `--a-ink`
+    is the same pink lightened until the worst ground passes; `--a` stays the saturated fill for
+    lanes and swatches. The check is a test, not a comment.
 
 ---
 
