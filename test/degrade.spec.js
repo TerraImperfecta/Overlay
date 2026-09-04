@@ -133,12 +133,20 @@ test("MediaRecorder appears only as a labelled last resort", async ({ page }) =>
   }
 });
 
+// One full render per offered format, so the budget has to scale with the list
+// rather than sit at Playwright's default. The inner per-format wait must stay
+// comfortably below it: when the inner budget is the larger of the two, a stall
+// surfaces as "Test timeout exceeded" pointing at page.evaluate, naming nothing.
+// That is exactly how this test failed on WebKit, saying only that it was slow.
+const PER_FORMAT_MS = 15000;
+
 test("every format the browser offers actually works", async ({ page }, testInfo) => {
+  test.setTimeout(PER_FORMAT_MS * 10 + 30000);
   await page.goto("/index.html");
   await page.waitForFunction(() => document.querySelector("#fmt")?.options.length > 0);
   await loadSources(page);
 
-  const results = await page.evaluate(async () => {
+  const results = await page.evaluate(async (perFormatMs) => {
     const sel = document.querySelector("#fmt"), btn = document.querySelector("#render");
     const out = document.querySelector("#out"), rows = [];
     for (const id of [...sel.options].map((o) => o.value)) {
@@ -147,27 +155,31 @@ test("every format the browser offers actually works", async ({ page }, testInfo
       out.innerHTML = "";
       btn.click();
       const t0 = performance.now();
-      while (performance.now() - t0 < 60000) {
+      let settled = false;
+      while (performance.now() - t0 < perFormatMs) {
         await new Promise((r) => setTimeout(r, 100));
-        if (!btn.disabled && out.innerHTML) break;
+        if (!btn.disabled && out.innerHTML) { settled = true; break; }
       }
       const a = out.querySelector("a.dl");
       const warn = out.querySelector(".warn");
-      rows.push({ id, download: !!a, filename: a ? a.getAttribute("download") : null,
+      rows.push({ id, settled, ms: Math.round(performance.now() - t0),
+                  download: !!a, filename: a ? a.getAttribute("download") : null,
                   message: warn ? warn.textContent.trim() : null });
     }
     return rows;
-  });
+  }, PER_FORMAT_MS);
 
   await testInfo.attach("formats.json", {
     body: JSON.stringify(results, null, 1), contentType: "application/json" });
   for (const r of results) {
-    console.log(`[${testInfo.project.name}] ${r.id.padEnd(10)} ` +
+    console.log(`[${testInfo.project.name}] ${r.id.padEnd(10)} ${String(r.ms).padStart(6)}ms  ` +
                 `${r.download ? "ok " + r.filename : "FAILED"}${r.message ? "  — " + r.message : ""}`);
   }
 
-  // The whole point of the issue: the list must shrink rather than lie.
+  // Named individually, so a slow or stuck format says which one it was rather
+  // than taking the whole test down with an anonymous timeout.
   for (const r of results) {
+    expect(r.settled, `${r.id} did not finish within ${PER_FORMAT_MS}ms`).toBe(true);
     expect(r.download, `${r.id} was offered but produced no download: ${r.message}`).toBe(true);
   }
 });

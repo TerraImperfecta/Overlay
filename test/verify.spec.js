@@ -147,8 +147,12 @@ test("render() surfaces a verification failure instead of offering the file", as
 // This also pins #17's result -- every format the browser offers renders end to
 // end and is actually offered for download.
 test("every offered format renders and is offered for download", async ({ page }) => {
+  // Budget scales with the format list, and the per-format wait stays under it
+  // so a stall names the format rather than timing out the whole test.
+  const PER_FORMAT_MS = 15000;
+  test.setTimeout(PER_FORMAT_MS * 10 + 30000);
   const plan = await loadSources(page);
-  const results = await page.evaluate(async () => {
+  const results = await page.evaluate(async (perFormatMs) => {
     const sel = document.querySelector("#fmt"), btn = document.querySelector("#render");
     const out = document.querySelector("#out"), rows = [];
     for (const id of [...sel.options].map((o) => o.value)) {
@@ -157,23 +161,25 @@ test("every offered format renders and is offered for download", async ({ page }
       out.innerHTML = "";
       btn.click();
       const t0 = performance.now();
-      while (performance.now() - t0 < 30000) {
+      let settled = false;
+      while (performance.now() - t0 < perFormatMs) {
         await new Promise((r) => setTimeout(r, 50));
-        if (!btn.disabled && out.innerHTML) break;
+        if (!btn.disabled && out.innerHTML) { settled = true; break; }
       }
       const a = out.querySelector("a.dl");
       rows.push({
-        id,
+        id, settled, ms: Math.round(performance.now() - t0),
         download: !!a,
         filename: a ? a.getAttribute("download") : null,
         error: out.querySelector(".warn") ? out.querySelector(".warn").textContent : null,
       });
     }
     return rows;
-  });
+  }, PER_FORMAT_MS);
 
   expect(results.length).toBeGreaterThan(0);
   for (const r of results) {
+    expect(r.settled, `${r.id} did not finish within ${PER_FORMAT_MS}ms`).toBe(true);
     expect(r.error, `${r.id} reported: ${r.error}`).toBeNull();
     expect(r.download, `${r.id} offered no download`).toBe(true);
     expect(r.filename).toMatch(/^overlay\./);
