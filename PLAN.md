@@ -196,6 +196,20 @@ breaks", not as a list of probable defects. Rank your suspicion in this order:
    which is exactly the kind of latent fault that surfaces the moment someone parses further,
    as the HDR or 10-bit work noted in section 3 would have to. **Fixed and tested in #21**,
    against hand-built headers covering the branches Chrome never emits.
+
+   `Bits.uvlc()` had a second arithmetic fault, **fixed in #57**. The offset was `(1<<z)-1`,
+   and `1<<31` is negative in JavaScript, so z = 31 returned −2147483649 where the value is
+   2147483647 — and the guard stopped at `z > 31`, which left 31 itself permitted and wrong.
+   The offset is `(2 ** z) - 1` now.
+
+   Two things worth knowing before touching it again. The **value is discarded** — it is read
+   once, for `num_ticks_per_picture_minus_1` — so what this mostly has to get right is *how many
+   bits it consumes*; a wrong count desynchronises every field after it, which is the shape the
+   `operating_parameters_info` bug had. And the old `z > 31` bail-out was **load-bearing as a
+   loop bound**: `f()` returns 0 past the end of the buffer, so a reader looking for a
+   terminating 1 that is not there never finds one and hangs the tab. The bound is the buffer
+   now, and running out throws; 32 or more leading zeros is a legal encoding of the maximum and
+   returns 2³²−1 with the terminating 1 consumed, per spec.
 3. **EBML `muxWebM`.** `SimpleBlock` relative timecodes are `int16`, so clusters must break
    before 32767 ms; the current break is at 30000 ms. **Verified in #18** on a 44-second clip:
    two clusters, maximum relative timecode 29600. The margin is structural — the condition is

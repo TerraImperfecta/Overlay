@@ -1054,8 +1054,31 @@ class Bits {
   constructor(u8){ this.d = u8; this.p = 0; }
   f(n){ let v = 0; for (let i=0;i<n;i++){
     v = (v*2) + ((this.d[this.p>>3] >> (7-(this.p&7))) & 1); this.p++; } return v; }
-  uvlc(){ let z = 0; while (!this.f(1)){ z++; if (z > 31) return 0; }
-          return z ? ((1<<z)-1) + this.f(z) : 0; }
+  /* The offset is computed in floating point, not with a shift: 1<<31 is
+     negative in JavaScript, so ((1<<z)-1) at z=31 is -2147483649 where the
+     value should be 2147483647. The old guard stopped at z > 31, which left 31
+     itself permitted and wrong.
+
+     The value is discarded today -- it is read once, for
+     num_ticks_per_picture_minus_1 -- so what this mainly has to get right is
+     how many bits it consumes. Everything after it is read from wherever this
+     leaves the reader, which is the shape #42 had. */
+  uvlc(){
+    let z = 0;
+    /* f() returns 0 past the end of the buffer, so a reader looking for a 1
+       that is not there would never find one and would hang the tab. The old
+       bail-out at 32 doubled as that bound; the bound is now the buffer itself,
+       so a legal 32-leading-zero uvlc is no longer mistaken for a broken one. */
+    while (!this.f(1)){
+      z++;
+      if (this.p >= this.d.length * 8)
+        throw new Error("That AV1 sequence header ends mid-number.");
+    }
+    /* Per spec, 32 or more leading zeros encodes the maximum and no value bits
+       follow it. The terminating 1 has already been consumed above. */
+    if (z >= 32) return 4294967295;
+    return z ? (2 ** z) - 1 + this.f(z) : 0;
+  }
 }
 function findSequenceHeader(chunk){
   let p = 0;

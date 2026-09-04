@@ -105,6 +105,33 @@ function buildSeqHeader(o){
 }
 `;
 
+// Reading a uvlc back out of one the writer produced. A function declaration,
+// because `class W` belongs to the eval that declared it and is invisible to
+// anything outside it.
+const UVLC = `
+function readUvlc(v){
+  const w = new W().uvlc(v);
+  const b = new Bits(w.payload());
+  const got = b.uvlc();
+  return { v, got, read: b.p, written: w.length };
+}
+function readRaw(bits){
+  const bytes = new Uint8Array(Math.ceil(Math.max(bits.length, 1) / 8));
+  bits.forEach((b, i) => { if (b) bytes[i >> 3] |= 1 << (7 - (i & 7)); });
+  const r = new Bits(bytes);
+  let err = null, got = null;
+  try { got = r.uvlc(); } catch (e) { err = e.message; }
+  return { got, read: r.p, err };
+}
+`;
+
+async function uvlc(page, fn) {
+  return page.evaluate(({ writer, helper, body }) => {
+    eval(writer + helper);
+    return eval(body);
+  }, { writer: WRITER, helper: UVLC, body: fn });
+}
+
 async function parse(page, spec) {
   return page.evaluate(
     ({ writer, build, o }) => {
@@ -260,4 +287,77 @@ test("a description from the browser is passed through untouched", async ({ page
     return out === desc;
   });
   expect(same).toBe(true);
+});
+
+// --- uvlc (#57) ------------------------------------------------------------
+//
+// The value uvlc() returns is discarded today -- it is read once, for
+// num_ticks_per_picture_minus_1, and thrown away. Only its effect on the bit
+// position matters, which is precisely why it is worth testing directly: a
+// wrong value is invisible until the day something reads it, and a wrong bit
+// count desynchronises every field after it.
+
+test("uvlc round-trips every leading-zero length it permits", async ({ page }) => {
+  const rows = await uvlc(page, `
+    (() => { const out = [];
+      for (let z = 0; z <= 31; z++) out.push({ z, ...readUvlc(Math.pow(2, z) - 1) });
+      return out; })()`);
+
+  for (const r of rows) {
+    // 2^z - 1 is the smallest value with z leading zeros, so the offset is the
+    // whole of it and the value bits are all zero.
+    expect(r.got, `z=${r.z} read back wrong`).toBe(r.v);
+    expect(r.read, `z=${r.z} consumed the wrong number of bits`).toBe(r.written);
+  }
+});
+
+test("uvlc does not overflow at 31 leading zeros", async ({ page }) => {
+  // 1 << 31 is negative in JavaScript, so ((1<<z)-1) is -2147483649 here rather
+  // than 2147483647. z > 31 bailed out, which left 31 permitted and wrong.
+  const r = await uvlc(page, `readUvlc(2147483647)`);
+  expect(r.got).toBe(2147483647);
+  expect(r.got).toBeGreaterThan(0);
+  expect(r.read).toBe(r.written);
+});
+
+test("uvlc reads the largest value the field can hold", async ({ page }) => {
+  // 2^32 - 2: still 31 leading zeros, but every one of the 31 value bits set.
+  const r = await uvlc(page, `readUvlc(4294967294)`);
+  expect(r.got).toBe(4294967294);
+  expect(r.read).toBe(r.written);
+});
+
+test("32 or more leading zeros is the maximum, not a silent zero", async ({ page }) => {
+  // The spec: leadingZeros >= 32 returns 2^32 - 1, and no value bits follow.
+  const r = await uvlc(page, `readRaw([...Array(32).fill(0), 1])`);
+  expect(r.err).toBeNull();
+  expect(r.got).toBe(4294967295);
+  // The terminating 1 is still consumed; stopping short of it would leave every
+  // later field being read one bit early.
+  expect(r.read).toBe(33);
+});
+
+test("a uvlc that runs off the end of the header is refused, not looped on",
+  async ({ page }) => {
+    // f() returns 0 past the end of the buffer, so a reader looking for a 1 that
+    // is not there never finds one. The old bail-out at 32 hid that; the bound
+    // is now the buffer, and running out is treated as the malformed input it is.
+    const r = await uvlc(page, `readRaw(Array(200).fill(0))`);
+    expect(r.err).toBeTruthy();
+    expect(r.err).toMatch(/AV1/i);
+  });
+
+test("a large tick count leaves the reader in step", async ({ page }) => {
+  // The end-to-end version: the value is discarded, but if uvlc consumed the
+  // wrong number of bits every field after it would be read from the wrong
+  // offset -- which is the shape #42 had.
+  const r = await parse(page, {
+    profile: 0,
+    timing: { numUnits: 1000, timeScale: 30000,
+              equalPictureInterval: 1, ticksMinus1: 2147483647 },
+    operatingPoints: [{ level: 13, tier: 1 }],
+  });
+  expect(r.levelIdx).toBe(13);
+  expect(r.tier).toBe(1);
+  expect(r.bits).toBe(r.written);
 });
