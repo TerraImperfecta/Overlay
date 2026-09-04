@@ -80,6 +80,7 @@
     image-rendering:pixelated;cursor:grab;border-radius:2px;
     box-shadow:0 0 0 1px rgba(255,255,255,.07)}
   #stage.drag{cursor:grabbing}
+  #stage:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
   #stage[hidden]{display:none}
 
   /* Before anything is loaded the stage was simply blank, which told a first
@@ -118,6 +119,15 @@
   input[type=color]{width:100%;height:32px;padding:2px;background:var(--panel-2);
     border:1px solid var(--rule);border-radius:2px}
   .val{font-family:var(--mono);font-size:11px;color:var(--ink);float:right}
+  .val.unit{color:var(--ink-dim)}
+  .xy{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .xy label{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;
+    color:var(--ink-dim)}
+  .xy input{width:100%;font-family:var(--mono);font-variant-numeric:tabular-nums}
+  /* Announcements for a screen reader, and nothing for anyone else. Not
+     display:none, which would take it out of the accessibility tree too. */
+  .sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;
+    clip:rect(0 0 0 0);white-space:nowrap;border:0}
   .seg{display:grid;grid-template-columns:1fr 1fr;gap:6px}
   .seg button{padding:6px}
   .seg button[aria-pressed=true]{background:var(--sel);color:var(--ink);
@@ -195,7 +205,8 @@
       <div class="panel grow">
         <h2>Preview</h2>
         <div class="stage">
-          <canvas id="stage" width="320" height="240"></canvas>
+          <canvas id="stage" width="320" height="240" tabindex="0"
+                  aria-describedby="stageHelp"></canvas>
           <div class="empty" id="empty">
             <div class="up" aria-hidden="true">&#9650;</div>
             <div class="big">Drop two animations above</div>
@@ -204,6 +215,9 @@
             <div class="fmts">gif &middot; apng &middot; webp &middot; video</div>
           </div>
         </div>
+        <p id="stageHelp" class="sr">Arrow keys move the selected layer by one pixel,
+          with Shift for ten. Use the Move and size controls to choose which layer.</p>
+        <p id="announce" class="sr" role="status" aria-live="polite"></p>
         <div class="stagebar">
           <button id="play" class="ghost" style="width:auto;padding:5px 12px">Pause</button>
           <span id="pos">0.00s</span>
@@ -269,6 +283,11 @@
             <button id="lyOver" aria-pressed="true">Overlay</button></div></div>
           <div class="ctl"><label class="k" for="sc">Layer size <span id="scv" class="val"></span></label>
             <input type="range" id="sc" min="10" max="300" value="100"></div>
+          <div class="ctl"><label class="k">Position <span class="val unit">px from top left</span></label>
+            <div class="xy">
+              <label for="px">X<input type="number" id="px" step="1"></label>
+              <label for="py">Y<input type="number" id="py" step="1"></label>
+            </div></div>
           <div class="ctl"><label class="k">Canvas</label>
             <div class="seg"><button id="cvBase" aria-pressed="true">Base size</button>
             <button id="cvFit" aria-pressed="false">Fit both</button></div></div>
@@ -1482,6 +1501,88 @@ function geometry(view){
           dx: -box.x || 0, dy: -box.y || 0};
 }
 
+/* Placement is stored as the layer's *centre*, as a fraction of the base's
+   natural size, because that is what survives the base being swapped for one of
+   a different size. Nobody thinks in those units. These two convert to and from
+   the top-left corner in base pixels, which is what "16 pixels from the left
+   edge" means and what the numeric fields show.
+
+   Base pixels rather than output pixels on purpose: in "Fit both" the canvas
+   origin moves when the overlay does, so a typed 0 would not read back as 0.
+   With the default base placement the two are identical anyway. */
+function layerPos(i, view){
+  const b = layerBox(i, view);
+  return b ? {x: b.x, y: b.y} : null;
+}
+
+function setLayerPos(i, x, y){
+  const A = S.src[0], src = S.src[i], p = S.place[i];
+  if (!A || !src) return false;
+  const w = src.width * p.scale, h = src.height * p.scale;
+  /* A half-typed or emptied field parses to NaN; that axis is left alone rather
+     than throwing the layer to the corner while someone is still typing. */
+  if (Number.isFinite(x)) p.x = (x + w/2) / A.width;
+  if (Number.isFinite(y)) p.y = (y + h/2) / A.height;
+  return true;
+}
+
+/* Everything that moves a layer ends here: the drag, the arrows, and a typed
+   coordinate. Moving the base changes the canvas in either mode, and in "Fit
+   both" so does moving the overlay; anything else would only make replan()
+   restart the preview for no change.
+
+   The fields are refreshed here rather than being left to the animation loop,
+   so the number changes because the layer moved and not because a frame
+   happened to be drawn -- requestAnimationFrame does not run in a background
+   tab, and the loop is throttled well below the rate a key can repeat. */
+function placementChanged(){
+  if (S.canvasMode === "fit" || S.sel === 0) replan();
+  else syncPlacementFields();
+}
+
+function nudge(dx, dy){
+  const pos = layerPos(S.sel);
+  if (!pos) return false;
+  setLayerPos(S.sel, pos.x + dx, pos.y + dy);
+  placementChanged();
+  announcePosition();
+  return true;
+}
+
+function announcePosition(){
+  const pos = layerPos(S.sel);
+  if (!pos) return;
+  $("#announce").textContent = `${S.sel ? "Overlay" : "Base"} at ${
+    Math.round(pos.x)}, ${Math.round(pos.y)}`;
+}
+
+/* The fields follow every other way a layer can move -- dragging, the arrows,
+   Recenter, the size slider, a swap -- so they are refreshed from the state
+   rather than by each of those in turn. Never while the field has focus, or it
+   would rewrite what someone is in the middle of typing. */
+function syncPlacementFields(){
+  const pos = layerPos(S.sel), px = $("#px"), py = $("#py"), live = !!pos;
+  if (px.disabled === live){ px.disabled = !live; py.disabled = !live; }
+  if (!pos) return;
+  for (const [el, v] of [[px, Math.round(pos.x)], [py, Math.round(pos.y)]]){
+    if (document.activeElement !== el && el.value !== String(v)) el.value = String(v);
+  }
+}
+
+/* The preview is a canvas, so without this it is an unlabelled blank to anyone
+   not looking at it. */
+function updateStageLabel(){
+  const [A,B] = S.src, plan = S.plan;
+  let text;
+  if (!A && !B) text = "Preview. Nothing loaded yet.";
+  /* setAttribute takes a raw string -- esc() here would have a screen reader
+     read out "&amp;" from any filename containing an ampersand. */
+  else if (!A || !B) text = `Preview of ${(A||B).name}. Waiting for a second file.`;
+  else text = `Preview: ${B.name} over ${A.name}` + (plan
+    ? `, ${plan.count} frames, ${(plan.outDur/1000).toFixed(2)} seconds.` : ".");
+  if (stage.getAttribute("aria-label") !== text) stage.setAttribute("aria-label", text);
+}
+
 /* `view` is the state to composite from. The preview passes nothing and reads S
    live, which is what it wants. A render passes a snapshot taken when it began,
    so that nothing the user touches while it runs can land halfway through the
@@ -1557,6 +1658,7 @@ function loop(){
   const loaded = !!(S.src[0] || S.src[1]);
   if (emptyEl.hidden !== loaded) emptyEl.hidden = loaded;
   if (stage.hidden === loaded) stage.hidden = !loaded;
+  syncPlacementFields();
   const plan = S.plan, dur = plan ? plan.outDur : 1000;
   const t = S.playing ? ((performance.now() - S.t0) % dur) : pausedAt;
   let snapped = t;
@@ -1631,6 +1733,7 @@ function replan(){
   if (!A || !B){
     S.plan = null; $("#render").disabled = true; $("#syncNote").textContent = "";
     R.innerHTML = '<div class="idle">Load two files to see the plan.</div>';
+    updateStageLabel(); syncPlacementFields();
     return;
   }
   const plan = planTimeline(A, B, S.sync, S.maxFrames);
@@ -1660,6 +1763,7 @@ function replan(){
       ? "Resampled to fit the frame budget — raise it for exact timing."
       : heavy ? "Large output. Drop the output scale or frame budget."
       : "Exact frame boundaries preserved."}</div>`;
+  updateStageLabel(); syncPlacementFields();
 }
 
 /* =====================================================================
@@ -2043,7 +2147,7 @@ seg("#bgT","#bgC","transparent","solid", v => { S.bg = v; writeSettings(); });
 
 bind("#swap","click", () => { S.src.reverse(); renderSlot(0); renderSlot(1); replan(); });
 bind("#center","click", () => {
-  S.place[S.sel].x = .5; S.place[S.sel].y = .5; replan();
+  S.place[S.sel].x = .5; S.place[S.sel].y = .5; replan(); announcePosition();
 });
 bind("#render","click", render);
 bind("#cancel","click", () => {
@@ -2072,11 +2176,29 @@ stage.addEventListener("pointermove", e => {
   p.x += (e.clientX-last.clientX)*k / S.src[0].width;
   p.y += (e.clientY-last.clientY)*k / S.src[0].height;
   last = e;
-  /* Moving the base changes the canvas in either mode -- "Base size" follows the
-     base's box -- so both need a replan, not just "Fit both". */
-  if (S.canvasMode === "fit" || S.sel === 0) replan();
+  placementChanged();
 });
 stage.addEventListener("pointerup", () => { dragging = false; stage.classList.remove("drag"); });
+
+/* The drag handler was the only way to set a position, so without this a
+   keyboard user could reach every control on the page and then not do the one
+   thing the tool is for. */
+const NUDGE = { ArrowLeft:[-1,0], ArrowRight:[1,0], ArrowUp:[0,-1], ArrowDown:[0,1] };
+stage.addEventListener("keydown", e => {
+  const d = NUDGE[e.key];
+  if (!d || e.metaKey || e.ctrlKey || e.altKey) return;
+  const step = e.shiftKey ? 10 : 1;
+  /* Only swallow the key if it actually moved something, so the page still
+     scrolls with the arrows when there is nothing to move. */
+  if (nudge(d[0]*step, d[1]*step)) e.preventDefault();
+});
+
+const onXY = () => {
+  if (!setLayerPos(S.sel, parseFloat($("#px").value), parseFloat($("#py").value))) return;
+  placementChanged();
+};
+bind("#px","input", onXY);
+bind("#py","input", onXY);
 
 $("#zoomIn").addEventListener("click", () => stepZoom(1));
 $("#zoomOut").addEventListener("click", () => stepZoom(-1));

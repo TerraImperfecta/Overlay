@@ -310,6 +310,33 @@ will point at the box far faster than reading the spec again.
     `--a` as *text* was 4.48:1 on `--panel` and 3.98:1 on `--panel-2`, both under AA. `--a-ink`
     is the same pink lightened until the worst ground passes; `--a` stays the saturated fill for
     lanes and swatches. The check is a test, not a comment.
+13. ~~Keyboard and numeric placement.~~ **Done in #61.** Dragging on the preview was the only
+    way to set `place[i].x/y`, so a keyboard user could reach every other control and then not
+    do the one thing the tool is for. Arrow keys nudge the selected layer by one base pixel and
+    Shift by ten; the canvas is focusable, described, and announces where a layer landed.
+
+    **The units were the real decision.** Placement is stored as the layer's *centre*, as a
+    fraction of the base's natural size, because that survives the base being swapped for one of
+    a different size — but nobody thinks in those units. The fields read the **top-left corner in
+    base pixels**, which is what "16 pixels from the left edge" means.
+
+    Base pixels rather than output pixels, which sound more natural: in **Fit both** the canvas
+    origin moves when the overlay does, so a typed `0` would not read back as `0`. With the
+    default base placement the two are identical anyway, and `geometry().dx` is 0 — there is a
+    test for each half of that.
+
+    `setLayerPos` ignores a non-finite coordinate per axis, because a field mid-edit is briefly
+    `""` and then briefly `"-"`; parsing those as 0 threw the layer into the corner while
+    someone was still typing.
+
+    Every way a layer can move now ends in `placementChanged()`, which refreshes the fields
+    **synchronously**. They were originally left to the animation loop, like the zoom label —
+    but `requestAnimationFrame` does not run in a background tab and is throttled well below the
+    rate a held key repeats, so the number went stale while the layer moved. A test reads the
+    field with no `await` at all, so no frame can have been drawn.
+
+    `syncPlacementFields` skips any input that has focus, or the loop would rewrite the first
+    digit before the second could be typed.
 
 ---
 
