@@ -51,6 +51,13 @@ class BitWriter:
         return bytes(self.out)
 
 
+# How many dictionary resets the most recent lzw_encode() emitted. A fixture
+# that exists to reach the 4096-entry reset has to be able to prove it did, or a
+# later change to the encoder or the image could leave it testing nothing while
+# still passing.
+LAST_LZW_RESETS = 0
+
+
 def lzw_encode(indices, min_code_size):
     """Compress index bytes to a GIF LZW stream.
 
@@ -62,6 +69,8 @@ def lzw_encode(indices, min_code_size):
     only for images large enough to reach the first bump, which is precisely
     the kind of bug a small test corpus fails to catch.
     """
+    global LAST_LZW_RESETS
+    LAST_LZW_RESETS = 0
     clear = 1 << min_code_size
     eoi = clear + 1
     code_size = min_code_size + 1
@@ -92,6 +101,7 @@ def lzw_encode(indices, min_code_size):
             table = {bytes([i]): i for i in range(clear)}
             next_code = eoi + 1
             code_size = min_code_size + 1
+            LAST_LZW_RESETS += 1
         w = bytes([k])
 
     bw.write(table[w], code_size)
@@ -246,6 +256,24 @@ YELLOW, MAGENTA, CYAN, WHITE = (255, 255, 0), (255, 0, 255), (0, 255, 255), (255
 P8 = [BLACK, RED, GREEN, BLUE, YELLOW, MAGENTA, CYAN, WHITE]
 
 
+def noise(n, levels, seed=0x2545F491):
+    """`n` index bytes with no structure for LZW to exploit.
+
+    xorshift32 written out rather than `random`, because the committed fixtures
+    have to regenerate byte-for-byte on whatever Python CI happens to run, and
+    everything else in this file is deterministic by construction. The high bits
+    are taken because xorshift's low ones are the weak end, and the LZW table
+    only fills quickly if consecutive pairs rarely repeat.
+    """
+    x, out = seed, bytearray()
+    for _ in range(n):
+        x ^= (x << 13) & 0xFFFFFFFF
+        x ^= x >> 17
+        x ^= (x << 5) & 0xFFFFFFFF
+        out.append((x >> 8) % levels)
+    return bytes(out)
+
+
 def solid(w, h, idx):
     return bytes([idx]) * (w * h)
 
@@ -274,6 +302,7 @@ def emit(name, note, width, height, palette, frames, probes_per_frame=None):
     canvas = Canvas(width, height)
     saved = None
     expected_frames = []
+    lzw_resets = 0
 
     for f in frames:
         if not f.get("no_gce"):
@@ -285,6 +314,7 @@ def emit(name, note, width, height, palette, frames, probes_per_frame=None):
             payload = b"".join(interlace_rows(rows))
         data += image_block(f["x"], f["y"], f["w"], f["h"], payload, mcs,
                             interlaced=f.get("interlaced", False), lct=f.get("lct"))
+        lzw_resets += LAST_LZW_RESETS
 
         # ---- intent model, in step with the file ----
         if f["disposal"] == 3:
@@ -316,6 +346,7 @@ def emit(name, note, width, height, palette, frames, probes_per_frame=None):
         "delaysMs": [e["delayMs"] for e in expected_frames],
         "frames": expected_frames,
         "bytes": len(data),
+        "lzwResets": lzw_resets,
     })
     print(f"{name:28} {len(data):5} bytes  {len(frames)} frame(s)  {note}")
 
@@ -442,9 +473,60 @@ def build():
            "delay_cs": 10, "disposal": 1}],
          probes_per_frame=[(12, 12), (0, 0), (23, 0), (0, 23), (23, 23)])
 
+    # 09 -- a transparent palette index declared in the graphic control block.
+    # Every other fixture gets its transparency from pixels nobody wrote. This
+    # one writes them, which is a different thing: a transparent index means
+    # "leave what is underneath", not "erase". Frame 2 covers the whole canvas
+    # and asks for index 7 on its right-hand side, so the right half of frame
+    # 1's red square must survive underneath while the right margin, which was
+    # never painted, must stay empty. A decoder that erases instead of skipping
+    # loses the red; one that ignores the index paints white over both.
+    #
+    # Frame 2 then disposes with method 2, which clears its whole rect -- the
+    # transparent pixels included, even though it never drew them.
+    half_green = bytes(2 if x < 12 else 7 for _ in range(24) for x in range(24))
+    emit("09-transparent-index.gif",
+         "Transparent colour index: pixels are skipped, not erased",
+         24, 24, P8,
+         [{"x": 6, "y": 6, "w": 12, "h": 12, "indices": solid(12, 12, 1),
+           "delay_cs": 10, "disposal": 1},
+          {"x": 0, "y": 0, "w": 24, "h": 24, "indices": half_green,
+           "delay_cs": 10, "disposal": 2, "transparent": 7},
+          {"x": 0, "y": 0, "w": 8, "h": 8, "indices": solid(8, 8, 3),
+           "delay_cs": 10, "disposal": 1}],
+         probes_per_frame=[(3, 3), (9, 9), (15, 9), (20, 3), (2, 20)])
+
+    # 10 -- the LZW dictionary reset.
+    # Every other fixture is small enough that the code size never widens past
+    # its first bump, so neither the encoder's 4096-entry reset nor the
+    # decoder's matching `code === clear` branch has ever run. Filling the table
+    # takes about 4086 emitted codes, which is roughly ten thousand pixels of
+    # noise -- not the few hundred it might sound like, and why this file is
+    # kilobytes where the others are bytes. There is no cheaper way to reach it.
+    #
+    # A reset bug produces plausible-looking output rather than an error, so the
+    # probes are late in the image, after the point where the table fills.
+    emit("10-lzw-reset.gif",
+         "LZW dictionary reset: the table fills and the encoder emits a clear code",
+         112, 96, GREY16,
+         [{"x": 0, "y": 0, "w": 112, "h": 96, "indices": noise(112 * 96, 16),
+           "delay_cs": 10, "disposal": 1}],
+         probes_per_frame=[(0, 0), (55, 48), (10, 90), (100, 80), (111, 95)])
+
 
 if __name__ == "__main__":
     build()
+
+    # A fixture that exists to reach a branch must show that it did. Without
+    # this, a change to the encoder or a smaller image would leave 10-lzw-reset
+    # passing every test while exercising nothing.
+    reset_fixture = next(c for c in CORPUS if c["file"] == "10-lzw-reset.gif")
+    assert reset_fixture["lzwResets"] >= 1, (
+        "10-lzw-reset.gif no longer fills the LZW table: "
+        f"{reset_fixture['lzwResets']} resets. Enlarge the noise image.")
+    for c in CORPUS:
+        if c["file"] != "10-lzw-reset.gif":
+            assert c["lzwResets"] == 0, f"{c['file']} unexpectedly reset the table"
     here = os.path.dirname(os.path.abspath(__file__))
     with open(os.path.join(here, "expected.json"), "w") as fh:
         json.dump({"files": CORPUS}, fh, indent=1)

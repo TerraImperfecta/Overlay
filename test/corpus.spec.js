@@ -82,6 +82,16 @@ for (const f of EXPECTED.files) {
   });
 }
 
+test("exactly one fixture fills the LZW table, and it is the one meant to", () => {
+  // 10-lzw-reset.gif exists to reach the 4096-entry reset, which every other
+  // fixture is far too small to touch. make_corpus.py asserts this at
+  // generation time; asserting it here holds the *committed* expected.json to
+  // it too, so a regeneration that quietly shrank the image below the threshold
+  // could not pass by leaving every other test still green.
+  const reset = EXPECTED.files.filter((f) => f.lzwResets > 0).map((f) => f.file);
+  expect(reset).toEqual(["10-lzw-reset.gif"]);
+});
+
 test("loadSource reports a still as static, contributing no duration", async ({ page }) => {
   const got = await page.evaluate(async () => {
     const buf = await (await fetch("/corpus/07-single-frame.gif")).arrayBuffer();

@@ -22,3 +22,6 @@ node_modules/
 playwright-report/
 test-results/
 .venv/
+
+# Python bytecode, from running the corpus generator
+__pycache__/
