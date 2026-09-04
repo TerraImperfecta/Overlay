@@ -245,8 +245,9 @@ will point at the box far faster than reading the spec again.
 
    Note `geometry()` normalises `-0`, which negating a zero offset produces. Harmless to draw
    with, but it is not what the function used to return and `Object.is` can tell.
-10. Optional Floyd–Steinberg dithering for the GIF path, off by default. Sources are usually
-    already quantised, so it mostly inflates file size — hence not built.
+10. ~~Optional Floyd–Steinberg dithering for the GIF path.~~ **Measured and ruled out in #31 —
+    see section 7.** It was implemented, measured, and the implementation reverted; the numbers
+    are in section 7 so nobody has to build it again to find out.
 11. Persist settings to `localStorage`. Reads and writes still need `try`/`catch` — private
     browsing and blocked site data can throw — but the `file://` hazard is gone.
 
@@ -368,6 +369,31 @@ Reconsider only if #20 concludes the hand-written AVIF muxer cannot be fixed. Th
 a custom Emscripten build of libavif with image-sequence support — `avifEncoderAddImage` does
 take per-frame durations — which means owning a toolchain and a multi-megabyte aom payload,
 because nobody has published such a build.
+
+**Floyd–Steinberg dithering for GIF.** Built in #31, measured, and reverted. It works — the
+banding median cut leaves across a gradient really does disappear — but it is the wrong answer
+to that problem.
+
+| source | plain GIF | dithered GIF | WebP | APNG |
+|---|---|---|---|---|
+| photographic, 240×240 | 42,317 | **204,207** (+383%) | **32,506** | 1,329,832 |
+| flat, upscaled 320×320 | 5,938 | **20,218** (+240%) | **3,090** | 20,586 |
+
+**WebP is smaller than the undithered GIF in both cases**, and has no palette at all, so there
+is no banding for it to dither away. Dithered GIF costs roughly 6× WebP's size to approximate
+what WebP does natively. Anyone reaching for GIF is choosing it for reach, which is precisely
+when a 4.8× file cannot be afforded; anyone who can spend those bytes should be picking WebP.
+
+One correction while here: the old entry said dithering "mostly inflates file size" because
+sources are already quantised, and item 8's reasoning blamed inter-frame diffing. Neither is
+quite right. An already-quantised source takes the *exact* palette path, where dithering never
+runs at all. And the diffing damage is small — changed pixels between consecutive frames went
+from 51.7% to 56.7% on the photographic case, and 29.4% to 29.7% on the flat one. What
+dithering actually destroys is **LZW compression within each frame**: the noise it adds breaks
+up the runs the encoder depends on. Same conclusion, different mechanism.
+
+Reopen only with a case where GIF is mandatory, the content is genuinely photographic, and the
+banding matters more than a fivefold file size. `git log` has the implementation.
 
 **Alpha in any AV1-based output.** `VideoFrame` from a canvas is YUV. AVIF alpha requires a
 separate auxiliary track. WebP and APNG cover the transparency case.
