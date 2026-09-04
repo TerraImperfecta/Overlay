@@ -120,6 +120,8 @@
     border:1px solid var(--rule);border-radius:2px}
   .val{font-family:var(--mono);font-size:11px;color:var(--ink);float:right}
   .val.unit{color:var(--ink-dim)}
+  .pair{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  button:disabled{opacity:.4;cursor:not-allowed}
   .xy{display:grid;grid-template-columns:1fr 1fr;gap:6px}
   .xy label{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;
     color:var(--ink-dim)}
@@ -295,9 +297,13 @@
             <div class="seg"><button id="bgT" aria-pressed="true">Transparent</button>
             <button id="bgC" aria-pressed="false">Solid</button></div>
             <div style="margin-top:6px"><input type="color" id="bgColor" value="#000000"></div></div>
+          <div class="ctl"><label class="k">History</label>
+            <div class="pair"><button class="ghost" id="undo" disabled>Undo</button>
+            <button class="ghost" id="redo" disabled>Redo</button></div></div>
           <div class="ctl"><button class="ghost" id="swap">Swap base and overlay</button></div>
           <div class="ctl"><button class="ghost" id="center">Recenter layer</button></div>
-          <p class="note">Drag on the preview to move the selected layer.</p>
+          <p class="note">Drag on the preview, or focus it and use the arrow keys —
+            Shift for ten pixels. Ctrl+Z or ⌘Z undoes a move.</p>
         </div>
       </div>
 
@@ -1526,6 +1532,98 @@ function setLayerPos(i, x, y){
   return true;
 }
 
+/* ---- placement history (#62) -----------------------------------------------
+
+   Only placement. Format, quality, sync mode and the rest are single controls
+   whose previous value is visible in the control itself and which persist
+   between visits, so a general undo stack would be a much larger commitment for
+   much less benefit.
+
+   Entries are whole placement states rather than deltas. There are two layers of
+   three numbers each, so a snapshot costs nothing, and restoring one cannot
+   drift the way replaying inverse operations can. `sel` travels with the state
+   so an undo selects the layer it just moved -- otherwise the size slider and
+   the position fields would describe a layer that did not change. */
+const HISTORY_MAX = 50;
+/* Long enough that a held arrow key or a slider drag is one entry, short enough
+   that two deliberate presses are two. */
+const COALESCE_MS = 700;
+let past = [], future = [], gesture = null;
+
+const placeState = () => ({ place: S.place.map(p => ({...p})), sel: S.sel });
+const samePlace = (a, b) => a.sel === b.sel && a.place.every((p, i) =>
+  p.scale === b.place[i].scale && p.x === b.place[i].x && p.y === b.place[i].y);
+
+/* Called immediately *before* placement is mutated. A gesture is a run of
+   changes from one source -- a drag, a held arrow, the digits of a typed
+   number -- and records the state from before the run, not before each change.
+   Without that the history fills with noise and undo appears not to work. */
+function beginChange(key){
+  const now = performance.now();
+  if (gesture && gesture.key === key && now - gesture.at < COALESCE_MS){
+    gesture.at = now;
+    return;
+  }
+  endChange();
+  gesture = { key, before: placeState(), at: now };
+}
+
+/* Called when a gesture is definitely over -- pointerup, a field losing focus,
+   a different gesture starting, or an undo about to read the stack. */
+function endChange(){
+  if (!gesture) return;
+  const before = gesture.before;
+  gesture = null;
+  /* A drag that never moved, or a field re-typed to the same number, is not a
+     step; it would otherwise cost the user an undo that does nothing. */
+  if (samePlace(before, placeState())) return;
+  past.push(before);
+  if (past.length > HISTORY_MAX) past.shift();
+  future.length = 0;
+  updateHistoryButtons();
+}
+
+function applyPlaceState(st){
+  S.place = st.place.map(p => ({...p}));
+  S.sel = st.sel;
+  syncLayerControls();
+  /* Unconditionally: the canvas depends on the base's box in either mode, and
+     an undo can change either layer. */
+  replan();
+  syncPlacementFields();
+  announcePosition();
+  updateHistoryButtons();
+}
+
+function undo(){
+  endChange();
+  if (!past.length) return false;
+  future.push(placeState());
+  applyPlaceState(past.pop());
+  return true;
+}
+
+function redo(){
+  endChange();
+  if (!future.length) return false;
+  past.push(placeState());
+  applyPlaceState(future.pop());
+  return true;
+}
+
+/* An open gesture is undoable before it is committed: undo() closes it first.
+   Reading past.length alone made the button claim there was nothing to undo
+   while the very same action was available on Ctrl+Z, which is a worse lie than
+   simply not having the button. */
+function canUndo(){
+  return past.length > 0 || !!(gesture && !samePlace(gesture.before, placeState()));
+}
+
+function updateHistoryButtons(){
+  $("#undo").disabled = !canUndo();
+  $("#redo").disabled = future.length === 0;
+}
+
 /* Everything that moves a layer ends here: the drag, the arrows, and a typed
    coordinate. Moving the base changes the canvas in either mode, and in "Fit
    both" so does moving the overlay; anything else would only make replan()
@@ -1538,11 +1636,13 @@ function setLayerPos(i, x, y){
 function placementChanged(){
   if (S.canvasMode === "fit" || S.sel === 0) replan();
   else syncPlacementFields();
+  updateHistoryButtons();
 }
 
 function nudge(dx, dy){
   const pos = layerPos(S.sel);
   if (!pos) return false;
+  beginChange("nudge");
   setLayerPos(S.sel, pos.x + dx, pos.y + dy);
   placementChanged();
   announcePosition();
@@ -2112,8 +2212,9 @@ bind("#maxf","input", e => { S.maxFrames = +e.target.value;
 bind("#blend","change", e => S.blend = e.target.value);
 bind("#op","input", e => { S.opacity = e.target.value/100; $("#opv").textContent = e.target.value+"%";
   writeSettings(); });
-bind("#sc","input", e => { S.place[S.sel].scale = e.target.value/100;
-  $("#scv").textContent = e.target.value+"%"; replan(); });
+bind("#sc","input", e => { beginChange("scale"); S.place[S.sel].scale = e.target.value/100;
+  $("#scv").textContent = e.target.value+"%"; replan(); updateHistoryButtons(); });
+bind("#sc","change", endChange);
 bind("#osc","input", e => { S.outScale = e.target.value/100;
   $("#oscv").textContent = e.target.value+"%"; replan(); writeSettings(); });
 bind("#q","input", e => { S.quality = e.target.value/100; $("#qv").textContent = e.target.value;
@@ -2138,16 +2239,23 @@ function seg(aId,bId,aVal,bVal,set){
 seg("#cvBase","#cvFit","base","fit", v => { S.canvasMode = v; replan(); });
 /* Selecting a layer moves the size slider onto it, so the control always shows
    the value it is about to change rather than the previous layer's. */
-seg("#lyBase","#lyOver", 0, 1, i => {
-  S.sel = i;
-  const pct = Math.round(S.place[i].scale*100);
+seg("#lyBase","#lyOver", 0, 1, i => { S.sel = i; syncLayerControls(); });
+
+/* Also called by an undo, which can restore a different layer's selection than
+   the one the controls are currently showing. */
+function syncLayerControls(){
+  $("#lyBase").setAttribute("aria-pressed", S.sel === 0 ? "true" : "false");
+  $("#lyOver").setAttribute("aria-pressed", S.sel === 1 ? "true" : "false");
+  const pct = Math.round(S.place[S.sel].scale*100);
   $("#sc").value = pct; $("#scv").textContent = pct + "%";
-});
+}
 seg("#bgT","#bgC","transparent","solid", v => { S.bg = v; writeSettings(); });
 
 bind("#swap","click", () => { S.src.reverse(); renderSlot(0); renderSlot(1); replan(); });
 bind("#center","click", () => {
+  beginChange("center");
   S.place[S.sel].x = .5; S.place[S.sel].y = .5; replan(); announcePosition();
+  endChange();
 });
 bind("#render","click", render);
 bind("#cancel","click", () => {
@@ -2167,7 +2275,14 @@ let dragging = false, last = null;
 stage.addEventListener("pointerdown", e => {
   /* The base alone can be moved now, so a second source is no longer required. */
   if (!S.src[S.sel]) return;
-  dragging = true; last = e; stage.classList.add("drag"); stage.setPointerCapture(e.pointerId);
+  dragging = true; last = e; stage.classList.add("drag");
+  beginChange("drag");
+  /* Last, and guarded. Capture is a convenience -- it keeps the drag alive past
+     the edge of the canvas -- but it throws on a pointer id the browser does not
+     recognise, and it used to sit ahead of beginChange, so that throw silently
+     cost the drag its history entry while the drag itself carried on. Nothing
+     after this line may depend on it. */
+  try { stage.setPointerCapture(e.pointerId); } catch { /* drag without it */ }
 });
 stage.addEventListener("pointermove", e => {
   if (!dragging || !S.src[0]) return;
@@ -2178,7 +2293,9 @@ stage.addEventListener("pointermove", e => {
   last = e;
   placementChanged();
 });
-stage.addEventListener("pointerup", () => { dragging = false; stage.classList.remove("drag"); });
+stage.addEventListener("pointerup", () => {
+  dragging = false; stage.classList.remove("drag"); endChange();
+});
 
 /* The drag handler was the only way to set a position, so without this a
    keyboard user could reach every control on the page and then not do the one
@@ -2194,11 +2311,29 @@ stage.addEventListener("keydown", e => {
 });
 
 const onXY = () => {
+  beginChange("xy");
   if (!setLayerPos(S.sel, parseFloat($("#px").value), parseFloat($("#py").value))) return;
   placementChanged();
 };
 bind("#px","input", onXY);
 bind("#py","input", onXY);
+/* change fires on blur or Enter, which is where a typed number is finished. */
+bind("#px","change", endChange);
+bind("#py","change", endChange);
+
+bind("#undo","click", undo);
+bind("#redo","click", redo);
+
+/* On the document rather than the preview, because there is nothing else on the
+   page to undo -- but never inside a field, where the browser's own text undo is
+   what someone pressing this means. */
+document.addEventListener("keydown", e => {
+  if (!(e.metaKey || e.ctrlKey)) return;
+  const k = e.key.toLowerCase();
+  if (k !== "z" && k !== "y") return;
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target && e.target.tagName)) return;
+  if ((k === "y" || e.shiftKey) ? redo() : undo()) e.preventDefault();
+});
 
 $("#zoomIn").addEventListener("click", () => stepZoom(1));
 $("#zoomOut").addEventListener("click", () => stepZoom(-1));

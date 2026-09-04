@@ -337,6 +337,34 @@ will point at the box far faster than reading the spec again.
 
     `syncPlacementFields` skips any input that has focus, or the loop would rewrite the first
     digit before the second could be typed.
+14. ~~Undo and redo for placement.~~ **Done in #62.** Placement only — position and scale, both
+    layers. Format, quality, sync mode and the rest are single controls whose previous value is
+    visible in the control itself and which persist between visits (#32), so a general stack
+    would be a much larger commitment for much less benefit. If that changes, it is a new issue.
+
+    Entries are whole placement states, not deltas: two layers of three numbers each costs
+    nothing to copy, and restoring a snapshot cannot drift the way replaying inverse operations
+    can. `sel` travels with the state, so an undo selects the layer it just restored — otherwise
+    the size slider and the position fields would describe a layer that did not change.
+
+    **Coalescing is the property that makes it usable.** A `beginChange(key)` opens a gesture and
+    records the state from before it; a run of changes with the same key inside `COALESCE_MS`
+    (700 ms) extends that gesture rather than starting one. So a twelve-move drag, a held arrow
+    key and the three digits of a typed number are each one step. A history with one entry per
+    `pointermove` is worse than none, because undo appears not to work.
+
+    `endChange` discards a gesture that ended where it started, so a drag that never moved and a
+    field re-typed to the same number do not cost an undo press that does nothing.
+
+    `undo()` calls `endChange()` before reading the stack, so it works immediately after a drag
+    with nothing in between. For the same reason the Undo *button* asks `canUndo()`, which counts
+    an open gesture: reading `past.length` alone made the button claim there was nothing to undo
+    while Ctrl+Z would have undone it.
+
+    **`setPointerCapture` must stay last in the pointerdown handler, and stay wrapped.** It
+    throws on a pointer id the browser does not recognise, and it used to run *before*
+    `beginChange`, so the throw silently cost the drag its history entry while the drag itself
+    carried on working. Firefox found that; Chromium and WebKit did not.
 
 ---
 
