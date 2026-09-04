@@ -185,7 +185,6 @@ bind("#osc","input", e => { S.outScale = e.target.value/100;
   $("#oscv").textContent = e.target.value+"%"; replan(); writeSettings(); });
 bind("#q","input", e => { S.quality = e.target.value/100; $("#qv").textContent = e.target.value;
   writeSettings(); });
-bind("#loops","input", e => S.loops = Math.max(1, Math.min(20, +e.target.value || 1)));
 bind("#bgColor","input", e => { S.bgColor = e.target.value; writeSettings(); });
 bind("#fmt","change", () => { onFormat(); writeSettings(); });
 

@@ -14,7 +14,7 @@ export const S = {
      with the base's transform made explicit rather than assumed. */
   place:[{scale:1, x:.5, y:.5}, {scale:1, x:.5, y:.5}], sel:1,
   canvasMode:"base", bg:"transparent", bgColor:"#000000",
-  sync:"auto", maxFrames:180, outScale:1, quality:.82, loops:3,
+  sync:"auto", maxFrames:180, outScale:1, quality:.82,
   playing:true, t0:performance.now(), plan:null
 };
 export const stage = $("#stage"), sctx = stage.getContext("2d", {willReadFrequently:true});

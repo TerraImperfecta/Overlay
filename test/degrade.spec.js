@@ -116,21 +116,18 @@ test("the format list is never empty and always includes GIF", async ({ page }) 
   expect(caps.formats.map((f) => f.id)).toContain("gif");
 });
 
-test("MediaRecorder appears only as a labelled last resort", async ({ page }) => {
+test("MediaRecorder is never offered as a format", async ({ page }) => {
+  // This used to assert conditionally -- "if any recorder entries exist, they
+  // must be labelled and alone" -- and the condition was never true on any
+  // engine, so it asserted nothing. #59 forced the branch, measured what it
+  // produced, and removed it: the frames land on the capture clock rather than
+  // the merged timeline, which is the drift this tool exists to prevent.
   await page.goto("/index.html");
   await page.waitForFunction(() => document.querySelector("#fmt")?.options.length > 0);
   const caps = await capabilities(page);
 
-  const recorders = caps.formats.filter((f) => f.recorder);
-  if (recorders.length) {
-    // It is a fallback, not a path: it may only appear when no VideoEncoder
-    // codec was found at all, and must say "(real time)" so nobody picks it
-    // expecting the timeline's timing.
-    const codedNonGif = caps.formats.filter((f) => !f.recorder && f.id !== "gif" &&
-                                                   f.id !== "webp" && f.id !== "apng");
-    expect(codedNonGif).toEqual([]);
-    for (const r of recorders) expect(r.label).toContain("real time");
-  }
+  expect(caps.formats.filter((f) => f.recorder)).toEqual([]);
+  expect(caps.formats.map((f) => f.label).join(" ")).not.toContain("real time");
 });
 
 // One full render per offered format, so the budget has to scale with the list
