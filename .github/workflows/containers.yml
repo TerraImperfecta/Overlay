@@ -1,0 +1,94 @@
+# Hold the MP4 and WebM muxers to FFmpeg's own demuxer (#58, #92).
+#
+# test/inspect_container.py parses these files from the specification, which
+# makes it a second implementation rather than an outside authority: a shared
+# misreading of the spec would fool it and the muxer alike. libavformat -- what
+# ffprobe is a thin CLI over -- has never seen our code, so its agreement means
+# something. PyAV ships it in a wheel, so no system package is needed.
+#
+# Its own workflow rather than a job in ci.yml, so `paths` can gate it natively:
+# this is minutes of browser and encoder work, and it has nothing to say about a
+# change to the UI or the GIF path.
+name: Containers
+
+on:
+  # Spelled out twice rather than shared with a YAML anchor: GitHub does
+  # not resolve anchors in workflow files, and the failure would be a
+  # workflow that quietly never runs -- which is the shape of bug this
+  # whole file exists to prevent elsewhere.
+  pull_request:
+    paths:
+      # The muxers themselves.
+      - 'js/isobmff.js'
+      - 'js/webm.js'
+      # What builds the samples and their timestamps.
+      - 'js/webcodecs.js'
+      - 'js/export.js'
+      # planTimeline decides plan.times, which is the thing being validated:
+      # a change here changes what "correct" means.
+      - 'js/timeline.js'
+      # And the tooling itself.
+      - 'test/validate_containers.py'
+      - 'test/export-fixtures.js'
+      - '.github/workflows/containers.yml'
+  push:
+    branches: [main]
+    paths:
+      # The muxers themselves.
+      - 'js/isobmff.js'
+      - 'js/webm.js'
+      # What builds the samples and their timestamps.
+      - 'js/webcodecs.js'
+      - 'js/export.js'
+      # planTimeline decides plan.times, which is the thing being validated:
+      # a change here changes what "correct" means.
+      - 'js/timeline.js'
+      # And the tooling itself.
+      - 'test/validate_containers.py'
+      - 'test/export-fixtures.js'
+      - '.github/workflows/containers.yml'
+
+jobs:
+  validate:
+    name: MP4 and WebM agree with libavformat
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.x'
+
+      - run: npm ci --prefer-offline --no-audit --fund=false
+
+      - run: npx playwright install --with-deps chromium
+
+      # PyAV bundles FFmpeg, which is why this needs no apt package -- and why
+      # it works at all on a machine whose Homebrew has dropped Intel support,
+      # the reason #58 sat open.
+      - run: pip install av
+
+      # The normal export, and the 55-frame one that crosses a WebM cluster
+      # break -- where SimpleBlock's int16 relative timecodes could go wrong,
+      # and the only case that exercises it.
+      - run: npm run fixtures
+      - run: npm run fixtures -- --stress
+
+      - name: Every timestamp must agree with the plan
+        run: python3 test/validate_containers.py
+
+      # Kept whatever the outcome: when this fails, the files are the evidence.
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: containers
+          path: |
+            out/*.mp4
+            out/*.webm
+            out/plan*.json
+          retention-days: 7

@@ -367,6 +367,18 @@ breaks", not as a list of probable defects. Rank your suspicion in this order:
    Keep the pairing. Our parser is the one that can say *why* — "two clusters, relative timecodes
    reset at 30400, maximum 29600 against a limit of 32767" — and libavformat is the one whose
    agreement means something.
+
+   **Gated in #92.** It was manual until then, which meant a change to `muxISOBMFF`, `muxWebM` or
+   the WebCodecs driver could merge with only our own parser behind it.
+   `.github/workflows/containers.yml` runs both exports and the validator whenever a muxer
+   changes, and not otherwise — it is minutes of browser and encoder work with nothing to say
+   about a UI change. `js/timeline.js` is on that list too: `planTimeline` decides `plan.times`,
+   so a change there changes what "correct" means.
+
+   The two path lists are spelled out twice because **GitHub does not resolve YAML anchors in
+   workflow files**, and the failure mode would be a workflow that quietly never runs.
+   `modules.spec.js` asserts the lists match each other and name files that exist — #86 renamed
+   every module, which is exactly how a path list goes stale without anyone noticing.
 4. **ISOBMFF sample tables.** `stts` run-length compression and the single-chunk `stsc`/`stco`
    arrangement. **Verified in #18** in both shapes: uneven delays produce one entry per sample
    (nothing to compress), 55 identical delays produce a single `(55, 800)` entry.
