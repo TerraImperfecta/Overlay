@@ -55,8 +55,9 @@ npm run fixtures && npm run fixtures -- --stress
 
 `js/` is one file per numbered section, 0–13, named for what it holds: icon, GIF decoder,
 source loader, timeline merge, GIF quantizer/encoder, WebP muxer, APNG muxer, ISOBMFF muxer
-(MP4 + AVIF), EBML muxer (WebM), WebCodecs driver, format registry, app state and compositing,
-export, UI wiring — plus `util.js`, which holds the three helpers everything uses. Each file
+(MP4 + AVIF), EBML muxer (WebM), WebCodecs driver, format registry, then section 11 as `11a`–`11g`
+(state, placement geometry, compositing, history, controls, preview, plan), export, and UI wiring
+— plus `util.js`, which holds the three helpers everything uses. Each file
 keeps its banner comment; the numbers are the map, and PLAN.md refers to them.
 
 They are **ES modules**. `index.html` loads one script, `js/main.js`, and the import graph
@@ -65,8 +66,10 @@ still no build step. `main.js` also re-exports everything, which is how the test
 the code; nothing in the app imports from it.
 
 Two consequences worth knowing before editing. A module cannot assign another module's binding,
-so the few pieces of shared mutable state — whether a render is running, whether one was
-cancelled — are changed through named functions in `js/11-app.js` rather than by assignment.
+so a mutable value always lives in the file that changes it, and shared state — whether a render
+is running, whether one was cancelled — is changed through named functions rather than by
+assignment. `test/modules.spec.js` enforces that, along with no import cycles and no module
+orphaned from the entry.
 And `gifWorkerSource()` builds a Worker by stringifying functions, so anything it lists must
 reference only what is listed alongside it; the worker has no imports and no page.
 

@@ -1,5 +1,6 @@
 import { $ } from "./util.js";
-import { breathe, makeRenderCanvas } from "./11-app.js";
+import { breathe } from "./11a-state.js";
+import { makeRenderCanvas } from "./11c-compositing.js";
 
 /* =====================================================================
    9. WEBCODECS ENCODE DRIVER

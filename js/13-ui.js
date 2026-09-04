@@ -1,27 +1,20 @@
 import { $, esc } from "./util.js";
 import { loadSource } from "./02-source-loader.js";
 import { FORMATS, buildFormats, onFormat } from "./10-formats.js";
+import { S, busy, requestCancel, stage } from "./11a-state.js";
+import { setLayerPos } from "./11b-geometry.js";
 import {
-  S,
-  announcePosition,
   beginChange,
-  busy,
   endChange,
-  loop,
   nudge,
   placementChanged,
   redo,
-  replan,
-  requestCancel,
-  resetZoom,
-  setLayerPos,
-  stage,
-  stepZoom,
-  syncLayerControls,
-  togglePlay,
   undo,
   updateHistoryButtons
-} from "./11-app.js";
+} from "./11d-history.js";
+import { announcePosition, syncLayerControls } from "./11e-controls.js";
+import { loop, resetZoom, stepZoom, togglePlay } from "./11f-preview.js";
+import { replan } from "./11g-plan.js";
 import { render } from "./12-export.js";
 
 /* =====================================================================
