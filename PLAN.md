@@ -60,6 +60,20 @@ The script is divided by numbered banner comments. Keep them; they are the map.
 Each of these looks like an oversight and is not. If you change one, you will reintroduce
 a bug that has already been fixed once.
 
+**The GIF parser bounds its own block walks.** The sub-block chain is length-prefixed, and
+walking it without checking the buffer length does not fail — it loops forever. Past the end
+`d[p]` is `undefined`, `p += 1 + undefined` makes `p` NaN, `d[NaN]` is `undefined`, and the tab
+freezes. Two loops had this shape and each froze on a different input; both are now bounded and
+throw. Fixed in #55, with a test per malformed input whose real assertion is that it returns at
+all.
+
+**Declared dimensions are checked before anything allocates.** A header may claim any size up to
+65535 a side and nothing downstream questions it. The dangerous case is not 65535 square, which
+wants 17 GB and throws promptly; it is around 16000 square, which wants a gigabyte *per frame*
+and succeeds, slowly. The caps — 16384 a side, 64 megapixels — are policy rather than format
+limits, sized so one decoded frame stays under a quarter of a gigabyte. Real GIFs are orders of
+magnitude below both.
+
 **Own GIF decoder instead of `ImageDecoder`.** `ImageDecoder` is used for WebP, AVIF and
 APNG but deliberately *not* for GIF. The hand-written decoder gives exact per-frame delays,
 works in browsers without WebCodecs, and applies the browser delay-clamping rule
