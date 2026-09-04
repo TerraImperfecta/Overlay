@@ -271,6 +271,20 @@ and APNG both remain (they need no browser codec — WebP does, and WebKit has n
 recorder is a convenience for getting *video* out, never the difference between an export and
 nothing.
 
+**The deployed site is verified too, and separately** (#90). Everything else runs against
+`test/serve.js` on localhost, which shares nothing with GitHub Pages but the bytes — content
+types, the `http` → `https` redirect, the CNAME and whether a deploy landed are all invisible to
+it. `npm run verify:deployed` compares every file the page needs against the checkout byte for
+byte, checks how they are served, and then drives the real origin through an export. CI runs it
+after `deploy`, so a green publish that produces a broken site fails visibly.
+
+The freshness check is the part worth keeping: it needs no version marker in the page, and it
+catches a half-applied publish as well as a stale one. Pages lags by minutes, so it waits.
+
+#88 is why this exists — a 404 on every slot rendered without a thumbnail, missed by the whole
+suite for the life of the code and found in seconds against production, because a 404 is not a
+console error and the only test watching responses watched the initial page load.
+
 **Output is verified before it is offered.** `verifyBlob()` feeds AVIF back through
 `ImageDecoder` and video through a `<video>` element. This exists because the muxers were
 written without access to a real decoder. Do not remove it as "unnecessary overhead".
