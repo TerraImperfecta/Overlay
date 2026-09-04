@@ -67,6 +67,10 @@ Notable changes to Overlay. Format follows [Keep a Changelog](https://keepachang
 - Tests for the sync-mode matrix: every row of `PLAN.md` section 6's table, each mode forced,
   the timeline strip's lanes agreeing with the plan, and the boundary-merge invariants.
 
+- Both layers can now be moved and scaled, not just the overlay. A Base/Overlay selector
+  chooses which one the size slider and preview dragging act on. "Base size" follows the base's
+  placed rectangle; "Fit both" is the union of the two.
+
 ### Changed
 
 - `PLAN.md` section 4 records that all four of its suspects were put in front of third-party
