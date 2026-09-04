@@ -64,6 +64,9 @@ Notable changes to Overlay. Format follows [Keep a Changelog](https://keepachang
 - Tests for slot reloading: one thumbnail per load, bitmaps closed and thumbnail URLs revoked
   on replacement, and a file that cannot be decoded leaving the previous source untouched.
 
+- Tests for the sync-mode matrix: every row of `PLAN.md` section 6's table, each mode forced,
+  the timeline strip's lanes agreeing with the plan, and the boundary-merge invariants.
+
 ### Changed
 
 - `PLAN.md` section 4 records that all four of its suspects were put in front of third-party

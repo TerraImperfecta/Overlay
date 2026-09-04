@@ -79,7 +79,12 @@ multiple of 10 — that regression existed and was removed.
 Fixed-fps resampling fights both sources' timing. Uniform resampling only kicks in when the
 union exceeds the frame budget. Keep that ordering.
 
-**20 ms minimum gap when merging boundaries.** Anything tighter cannot survive GIF's
+**20 ms minimum gap when merging boundaries.** Note the corollary, established in #23: because
+the merge guarantees at least 20 ms between boundaries, a plan can hold at most `outDur / 20`
+of them, so resampling only runs when `maxFrames` is *below* that — which means
+`outDur / maxFrames` is already at least 20. The `Math.max(20, ...)` inside the resampling step
+can therefore never change its value. It is unreachable, and no fixture can make it fire; kept
+because it stops being unreachable the moment this floor changes. Anything tighter cannot survive GIF's
 centisecond timing and produces frames no renderer will honour.
 
 **Sampling uses `plan.times[i] + 1`, never `plan.times[i]`.** The `+1` ms epsilon puts the
@@ -252,7 +257,13 @@ will point at the box far faster than reading the spec again.
 - A single-frame GIF (must be treated as static, contributing no boundaries)
 - A GIF whose first frame is not full-canvas
 
-**Sync modes.** Load pairs with these durations and check the mode Auto picks:
+**Sync modes.** ~~Load pairs with these durations and check the mode Auto picks.~~ **Confirmed
+in #23**, and automated — every row below is a test, and each forced mode overrides Auto. The
+sources are built with exact durations rather than taken from the corpus, whose GIFs are all
+the wrong length for this.
+
+Auto's rule, for reference when reading the table: `lcm` when the LCM is at most 12 s *and*
+neither source repeats more than 12 times inside it; `stretch` otherwise.
 
 | Base | Overlay | Expected | Why |
 |---|---|---|---|
