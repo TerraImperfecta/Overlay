@@ -234,9 +234,17 @@ will point at the box far faster than reading the spec again.
    `Function.prototype.toString`, so there is one implementation rather than two, and it falls
    back to running the same code on the main thread where a Worker cannot be created.
    `npm run bench:gif` reproduces the figures.
-9. Per-layer placement. Only the overlay can be moved and scaled; the base is pinned at
-   natural size. Generalising to two independently placed layers touches `geometry()`,
-   `composite()` and the drag handler.
+9. ~~Per-layer placement.~~ **Done in #30.** Both layers carry a `{scale, x, y}` in one shared
+   space, still measured in base-natural units so the defaults mean exactly what the old pinned
+   behaviour meant — untouched placement produces byte-identical output.
+
+   The canvas rule, which was the real question in that issue: **Base size** is the base's
+   placed rectangle, so scaling the base scales the output and moving it slides the overlay
+   underneath rather than resizing anything; **Fit both** is the union of the two placed
+   rectangles. A Base/Overlay selector decides what the size slider and preview dragging act on.
+
+   Note `geometry()` normalises `-0`, which negating a zero offset produces. Harmless to draw
+   with, but it is not what the function used to return and `Object.is` can tell.
 10. Optional Floyd–Steinberg dithering for the GIF path, off by default. Sources are usually
     already quantised, so it mostly inflates file size — hence not built.
 11. Persist settings to `localStorage`. Reads and writes still need `try`/`catch` — private

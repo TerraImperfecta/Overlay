@@ -177,7 +177,10 @@
             </select></div>
           <div class="ctl"><label class="k" for="op">Overlay opacity <span id="opv" class="val"></span></label>
             <input type="range" id="op" min="0" max="100" value="100"></div>
-          <div class="ctl"><label class="k" for="sc">Overlay size <span id="scv" class="val"></span></label>
+          <div class="ctl"><label class="k">Move and size</label>
+            <div class="seg"><button id="lyBase" aria-pressed="false">Base</button>
+            <button id="lyOver" aria-pressed="true">Overlay</button></div></div>
+          <div class="ctl"><label class="k" for="sc">Layer size <span id="scv" class="val"></span></label>
             <input type="range" id="sc" min="10" max="300" value="100"></div>
           <div class="ctl"><label class="k">Canvas</label>
             <div class="seg"><button id="cvBase" aria-pressed="true">Base size</button>
@@ -187,8 +190,8 @@
             <button id="bgC" aria-pressed="false">Solid</button></div>
             <div style="margin-top:6px"><input type="color" id="bgColor" value="#000000"></div></div>
           <div class="ctl"><button class="ghost" id="swap">Swap base and overlay</button></div>
-          <div class="ctl"><button class="ghost" id="center">Recenter overlay</button></div>
-          <p class="note">Drag on the preview to move the overlay.</p>
+          <div class="ctl"><button class="ghost" id="center">Recenter layer</button></div>
+          <p class="note">Drag on the preview to move the selected layer.</p>
         </div>
       </div>
 
@@ -1274,7 +1277,13 @@ async function buildFormats(){
    11. APP STATE + COMPOSITING
    ===================================================================== */
 const S = {
-  src:[null,null], blend:"source-over", opacity:1, scale:1, ox:.5, oy:.5,
+  src:[null,null], blend:"source-over", opacity:1,
+  /* Placement per layer, in "base-natural" units: x and y are the layer's
+     centre as a fraction of the base's own width and height, scale multiplies
+     the layer's natural size. The defaults put the base exactly where it used
+     to be pinned, and the overlay centred on it, so this is the old behaviour
+     with the base's transform made explicit rather than assumed. */
+  place:[{scale:1, x:.5, y:.5}, {scale:1, x:.5, y:.5}], sel:1,
   canvasMode:"base", bg:"transparent", bgColor:"#000000",
   sync:"auto", maxFrames:180, outScale:1, quality:.82, loops:3,
   playing:true, t0:performance.now(), plan:null
@@ -1282,15 +1291,39 @@ const S = {
 const stage = $("#stage"), sctx = stage.getContext("2d", {willReadFrequently:true});
 const tl = $("#timeline"), tctx = tl.getContext("2d");
 
-function geometry(){
-  const [A,B] = S.src;
+/* Where a layer sits, in base-natural units. The base's own size is the ruler
+   for both layers, which keeps placement resolution-independent and keeps the
+   defaults identical to the old base-pinned behaviour. */
+function layerBox(i, view){
+  const v = view || S;
+  const src = v.src[i], A = v.src[0], p = v.place[i];
+  if (!src || !A) return null;
+  const w = src.width * p.scale, h = src.height * p.scale;
+  const cx = A.width * p.x, cy = A.height * p.y;
+  return {x: cx - w/2, y: cy - h/2, w, h};
+}
+
+function geometry(view){
+  const v = view || S;
+  const [A,B] = v.src;
   if (!A) return {w:320,h:240,dx:0,dy:0};
-  if (S.canvasMode === "base" || !B) return {w:A.width,h:A.height,dx:0,dy:0};
-  const ow = B.width*S.scale, oh = B.height*S.scale;
-  const cx = A.width*S.ox, cy = A.height*S.oy;
-  const minX = Math.min(0, cx-ow/2), maxX = Math.max(A.width, cx+ow/2);
-  const minY = Math.min(0, cy-oh/2), maxY = Math.max(A.height, cy+oh/2);
-  return {w:Math.ceil(maxX-minX), h:Math.ceil(maxY-minY), dx:-minX, dy:-minY};
+  const a = layerBox(0, v), b = B ? layerBox(1, v) : null;
+  /* "Base size" is the base's placed rectangle, so scaling the base scales the
+     output and moving it slides the overlay underneath rather than resizing
+     anything. "Fit both" is the union of the two placed rectangles. */
+  const box = (v.canvasMode === "base" || !b)
+    ? a
+    : (() => {
+        const minX = Math.min(a.x, b.x), minY = Math.min(a.y, b.y);
+        const maxX = Math.max(a.x + a.w, b.x + b.w);
+        const maxY = Math.max(a.y + a.h, b.y + b.h);
+        return {x: minX, y: minY, w: maxX - minX, h: maxY - minY};
+      })();
+  /* `|| 0` normalises -0, which negating a zero offset produces. Harmless to
+     draw with, but it is not what this function used to return and Object.is
+     can tell the difference. */
+  return {w: Math.max(1, Math.ceil(box.w)), h: Math.max(1, Math.ceil(box.h)),
+          dx: -box.x || 0, dy: -box.y || 0};
 }
 
 /* `view` is the state to composite from. The preview passes nothing and reads S
@@ -1304,12 +1337,14 @@ function composite(ctx, W, H, t, dx, dy, forceOpaque, view){
   ctx.clearRect(0,0,W,H);
   if (v.bg === "solid" || forceOpaque){ ctx.fillStyle = v.bgColor; ctx.fillRect(0,0,W,H); }
   if (!A) return;
-  ctx.drawImage(A.frames[frameAt(A, t, plan?plan.kA:1)].bitmap, dx, dy);
+  const ab = layerBox(0, v);
+  ctx.drawImage(A.frames[frameAt(A, t, plan?plan.kA:1)].bitmap,
+                dx + ab.x, dy + ab.y, ab.w, ab.h);
   if (!B) return;
-  const ow = B.width*v.scale, oh = B.height*v.scale;
+  const bb = layerBox(1, v);
   ctx.globalCompositeOperation = v.blend; ctx.globalAlpha = v.opacity;
   ctx.drawImage(B.frames[frameAt(B, t, plan?plan.kB:1)].bitmap,
-                dx + A.width*v.ox - ow/2, dy + A.height*v.oy - oh/2, ow, oh);
+                dx + bb.x, dy + bb.y, bb.w, bb.h);
   ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = 1;
 }
 
@@ -1317,7 +1352,8 @@ function composite(ctx, W, H, t, dx, dy, forceOpaque, view){
    cannot change which sources a running render is drawing. */
 function renderView(plan){
   return {plan, src: S.src.slice(), bg: S.bg, bgColor: S.bgColor, blend: S.blend,
-          opacity: S.opacity, scale: S.scale, ox: S.ox, oy: S.oy};
+          opacity: S.opacity, canvasMode: S.canvasMode,
+          place: S.place.map(p => ({...p}))};
 }
 
 function makeRenderCanvas(W, H, g, opaque, view){
@@ -1464,7 +1500,7 @@ async function render(){
   const say = m => { btn.textContent = m; };
   const fmt = currentFormat();
   try {
-    const plan = S.plan, g = geometry(), view = renderView(plan);
+    const plan = S.plan, view = renderView(plan), g = geometry(view);
     const W = Math.max(2, Math.round(g.w*S.outScale) & ~1);
     const H = Math.max(2, Math.round(g.h*S.outScale) & ~1);
     let blob, warning = "";
@@ -1718,7 +1754,7 @@ bind("#maxf","input", e => { S.maxFrames = +e.target.value;
   $("#maxfv").textContent = S.maxFrames+" max"; replan(); });
 bind("#blend","change", e => S.blend = e.target.value);
 bind("#op","input", e => { S.opacity = e.target.value/100; $("#opv").textContent = e.target.value+"%"; });
-bind("#sc","input", e => { S.scale = e.target.value/100;
+bind("#sc","input", e => { S.place[S.sel].scale = e.target.value/100;
   $("#scv").textContent = e.target.value+"%"; replan(); });
 bind("#osc","input", e => { S.outScale = e.target.value/100;
   $("#oscv").textContent = e.target.value+"%"; replan(); });
@@ -1741,10 +1777,19 @@ function seg(aId,bId,aVal,bVal,set){
   b.onclick = () => { b.setAttribute("aria-pressed","true"); a.setAttribute("aria-pressed","false"); set(bVal); };
 }
 seg("#cvBase","#cvFit","base","fit", v => { S.canvasMode = v; replan(); });
+/* Selecting a layer moves the size slider onto it, so the control always shows
+   the value it is about to change rather than the previous layer's. */
+seg("#lyBase","#lyOver", 0, 1, i => {
+  S.sel = i;
+  const pct = Math.round(S.place[i].scale*100);
+  $("#sc").value = pct; $("#scv").textContent = pct + "%";
+});
 seg("#bgT","#bgC","transparent","solid", v => S.bg = v);
 
 bind("#swap","click", () => { S.src.reverse(); renderSlot(0); renderSlot(1); replan(); });
-bind("#center","click", () => { S.ox = .5; S.oy = .5; replan(); });
+bind("#center","click", () => {
+  S.place[S.sel].x = .5; S.place[S.sel].y = .5; replan();
+});
 bind("#render","click", render);
 bind("#cancel","click", () => {
   if (!busy) return;
@@ -1761,16 +1806,20 @@ bind("#play","click", e => {
 
 let dragging = false, last = null;
 stage.addEventListener("pointerdown", e => {
-  if (!S.src[1]) return;
+  /* The base alone can be moved now, so a second source is no longer required. */
+  if (!S.src[S.sel]) return;
   dragging = true; last = e; stage.classList.add("drag"); stage.setPointerCapture(e.pointerId);
 });
 stage.addEventListener("pointermove", e => {
   if (!dragging || !S.src[0]) return;
   const k = stage.width / stage.getBoundingClientRect().width;
-  S.ox += (e.clientX-last.clientX)*k / S.src[0].width;
-  S.oy += (e.clientY-last.clientY)*k / S.src[0].height;
+  const p = S.place[S.sel];
+  p.x += (e.clientX-last.clientX)*k / S.src[0].width;
+  p.y += (e.clientY-last.clientY)*k / S.src[0].height;
   last = e;
-  if (S.canvasMode === "fit") replan();
+  /* Moving the base changes the canvas in either mode -- "Base size" follows the
+     base's box -- so both need a replan, not just "Fit both". */
+  if (S.canvasMode === "fit" || S.sel === 0) replan();
 });
 stage.addEventListener("pointerup", () => { dragging = false; stage.classList.remove("drag"); });
 
