@@ -12,18 +12,15 @@ import {
   breathe,
   busy,
   cancelling,
-  geometry,
   lastGifPalette,
-  loop,
-  makeRenderCanvas,
   renderFinished,
   renderStarted,
-  renderView,
-  replan,
-  setLastGifPalette,
-  takeQueuedReplan,
-  workerView
-} from "./11-app.js";
+  setLastGifPalette
+} from "./11a-state.js";
+import { geometry } from "./11b-geometry.js";
+import { makeRenderCanvas, renderView, workerView } from "./11c-compositing.js";
+import { loop } from "./11f-preview.js";
+import { replan, takeQueuedReplan } from "./11g-plan.js";
 
 /* =====================================================================
    12. EXPORT

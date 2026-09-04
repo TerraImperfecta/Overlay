@@ -1,13 +1,8 @@
 import { $ } from "./util.js";
 import { frameAt } from "./03-timeline.js";
-import {
-  Cancelled,
-  cancelling,
-  composite,
-  compositeInto,
-  layerBox,
-  renderContext
-} from "./11-app.js";
+import { Cancelled, cancelling } from "./11a-state.js";
+import { layerBox } from "./11b-geometry.js";
+import { composite, compositeInto, renderContext } from "./11c-compositing.js";
 
 /* =====================================================================
    4. GIF QUANTIZER + ENCODER

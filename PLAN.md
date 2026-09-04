@@ -11,6 +11,26 @@ reopened rather than quietly kept. `file://` is no longer supported: it was a co
 single-file rule, not a goal in itself, and preserving it distorted the code. The single file
 itself is gone too — split in #75 — but no build step arrived with it, and none is wanted.
 
+**Section 11 is seven files, and the split follows one rule** (#85). It was 529 lines doing
+seven jobs; it is now `11a`–`11g`, each 55–150 lines, in a graph with no cycles:
+
+```
+11a-state ← 11b-geometry ← 11c-compositing
+                        ← 11e-controls ← 11g-plan ← 11d-history
+                                       ← 11f-preview
+```
+
+The rule that decided where each binding went is the one the module boundary imposes anyway:
+**a mutable binding lives in the module that assigns it**, because a module may read another's
+binding but never write it. So `busy` and `cancelling` sit with the transitions that set them,
+`past` with the history that pushes to it, `zoom` with the stepping that changes it, and
+`queuedReplan` with `replan()` rather than with the other render flags — putting it with them
+was the first thing that broke.
+
+`test/modules.spec.js` enforces that rule, along with no cycles and no module orphaned from the
+entry. All three are invisible until one particular path runs, and all three have already been
+wrong once.
+
 **The scripts are ES modules** (#78). `index.html` loads `js/main.js` and the import graph does
 the rest, so load order is not something to get right by hand. `main.js` re-exports every module
 for the test suite, which reaches the code by name; nothing in the app imports from it.
@@ -72,7 +92,13 @@ Each row is a file in `js/`, named for its number and contents, and an ES module
 | 8 | EBML muxer → WebM |
 | 9 | WebCodecs encode driver + output self-verification |
 | 10 | Format registry with capability probing |
-| 11 | App state, compositing, preview loop and zoom, timeline strip rendering |
+| 11a | App state, the DOM handles taken at load, and the render-lifecycle transitions |
+| 11b | Placement geometry: where each layer sits, and the output size that follows |
+| 11c | Compositing, the canvas helpers, and the snapshots a render draws from |
+| 11d | Placement history — undo and redo, and the funnel every move passes through |
+| 11e | Pushing state back into the controls, and announcing what moved |
+| 11f | The preview: the animation loop, zoom, and the merged-timeline strip |
+| 11g | The plan: building the merged timeline and reporting what the merge did |
 | 12 | Export entry points, one per container |
 | 13 | UI wiring |
 
