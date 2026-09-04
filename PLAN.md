@@ -365,6 +365,36 @@ will point at the box far faster than reading the spec again.
     throws on a pointer id the browser does not recognise, and it used to run *before*
     `beginChange`, so the throw silently cost the drag its history entry while the drag itself
     carried on working. Firefox found that; Chromium and WebKit did not.
+15. **Measured whether compositing belongs in the Worker (#63) — it does.** `npm run bench:gif`
+    now attributes the block that #29 left behind. At 768² over 36 frames:
+
+    | | ms | share |
+    |---|---|---|
+    | the compositing loop | 55.1 | 83% of the export's longest block |
+    | └ compositing | 44.4 | **81% of the loop** |
+    | └ readback (`getImageData`) | 15.7 | 28% of the loop |
+
+    Compositing and readback sum to roughly the loop, which is what makes the split
+    trustworthy. The win is strongly size-dependent: at 256² the loop is only 9% of the block,
+    so a small export would gain nothing.
+
+    **Do not measure this the obvious way.** Timing a loop that composites 36 frames into one
+    canvas reports compositing as *nearly free* — 1.2 ms rather than 44.4 ms, understating it
+    **37×** — because every draw but the last is immediately overwritten and a driver is free to
+    skip them. The first version of this benchmark did exactly that and concluded compositing
+    was 2% of the loop, which would have closed the issue on an artifact. The honest measurement
+    gives each frame its own canvas and forces the draw with a 1×1 read.
+
+    Two negative results worth keeping. Separating the draw and read phases — the fix that needs
+    no worker at all — is **worse** at every size (+19% to +41%), so there is no cheap
+    alternative to prefer. And retaining the 85 MB of frames costs nothing measurable: reading
+    36 frames and keeping them matches reading and discarding them, so the accumulation is not
+    the problem.
+
+    What remains is the obstacle the issue already named: every `ImageBitmap` transferred to a
+    worker is gone from the main thread, where the preview draws from those same bitmaps and
+    `disposeSource` owns them (#26). The measurement says the prize is real; it does not make
+    that cheaper.
 
 ---
 

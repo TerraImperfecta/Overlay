@@ -86,11 +86,193 @@ const SIZES = [256, 512, 768];
         out.push({ px, W, H, path, frames: plan.count, bytes: blob.size,
                    totalMs: Math.round(total), maxBlockMs: Math.round(maxGap) });
       }
-      return out;
+      /* ---- attributing the residual block (#63) ------------------------
+         #29 left an 18 ms block at 768 square, and the question is whether
+         compositing is most of it -- because only then is moving compositing
+         into the worker worth what it costs (see the issue: transferring an
+         ImageBitmap takes it away from the preview, which draws from the same
+         bitmaps).
+
+         Timing each call in the loop would answer the wrong question. Canvas
+         drawing is deferred: drawImage returns before the work happens, and the
+         cost lands on whatever forces a flush -- which here is getImageData.
+         Naive timing therefore reports compositing as nearly free and blames
+         readback for both. Instead each side is isolated:
+
+           A  composite + read + keep, every frame   -- the real loop
+           B  composite every frame, read once       -- draws, flushed once
+           C  read every frame, discarding each      -- readback alone
+           D  read every frame, keeping each         -- readback plus retention
+
+         B is compositing plus one readback; C is N readbacks. D differs from C
+         only in holding on to the results, which is what the export does: it
+         accumulates every frame before handing them to the worker. If A is
+         close to B + C the split is additive; if A is far above that but close
+         to D, the cost is neither compositing nor the readback call but the
+         85 MB of frames being kept alive. */
+      const attrib = [];
+      for (const px of sizes) {
+        S.outScale = px / 256;
+        const g = geometry();
+        const W = Math.max(2, Math.round(g.w * S.outScale) & ~1);
+        const H = Math.max(2, Math.round(g.h * S.outScale) & ~1);
+        const N = 36;
+        const plan = Object.assign({}, S.plan, {
+          count: N, times: Array.from({ length: N }, (_, i) => i * 100),
+          delaysMs: Array(N).fill(100), delaysCs: Array(N).fill(10), outDur: N * 100,
+        });
+        const view = renderView(plan);
+        const fresh = () => makeRenderCanvas(W, H, g, false, view);
+
+        // Warm: first draw of a size pays for allocation and shader setup.
+        const w0 = fresh(); w0.at(1); w0.cx.getImageData(0, 0, W, H);
+
+        const median = (f) => {
+          const runs = [];
+          for (let r = 0; r < 3; r++) runs.push(f());
+          return runs.sort((a, b) => a - b)[1];
+        };
+
+        const both = median(() => {
+          const R = fresh(), keep = [];
+          const t = performance.now();
+          for (let i = 0; i < N; i++){ R.at(plan.times[i] + 1);
+            keep.push(R.cx.getImageData(0, 0, W, H).data); }
+          const ms = performance.now() - t;
+          return keep.length === N ? ms : ms;   // keep alive past the timer
+        });
+
+        const compositeOnly = median(() => {
+          const R = fresh();
+          const t = performance.now();
+          for (let i = 0; i < N; i++) R.at(plan.times[i] + 1);
+          R.cx.getImageData(0, 0, 1, 1);        // force the flush
+          return performance.now() - t;
+        });
+
+        const readbackOnly = median(() => {
+          const R = fresh(); R.at(1); R.cx.getImageData(0, 0, W, H);
+          const t = performance.now();
+          for (let i = 0; i < N; i++) R.cx.getImageData(0, 0, W, H);
+          return performance.now() - t;
+        });
+
+        const readbackKept = median(() => {
+          const R = fresh(); R.at(1); R.cx.getImageData(0, 0, W, H);
+          const keep = [];
+          const t = performance.now();
+          for (let i = 0; i < N; i++) keep.push(R.cx.getImageData(0, 0, W, H).data);
+          const el = performance.now() - t;
+          return keep.length === N ? el : el;
+        });
+
+        /* B composites 36 times into one canvas, where every draw but the last
+           is immediately overwritten -- exactly the work a driver is free to
+           elide, which would make compositing look cheaper than it is. The
+           whole recommendation rests on that number, so it is checked here
+           against draws that cannot be skipped: one canvas each, and a 1x1 read
+           after each to force it to have happened. G is the same without the
+           compositing, so F - G is the draw cost with nothing hidden. */
+        const forced = median(() => {
+          const t = performance.now();
+          for (let i = 0; i < N; i++){
+            const R = fresh(); R.at(plan.times[i] + 1); R.cx.getImageData(0, 0, 1, 1);
+          }
+          return performance.now() - t;
+        });
+        const forcedEmpty = median(() => {
+          const t = performance.now();
+          for (let i = 0; i < N; i++){ const R = fresh(); R.cx.getImageData(0, 0, 1, 1); }
+          return performance.now() - t;
+        });
+
+        /* If the gap between A and B+C is the draw-then-read synchronisation --
+           each getImageData forcing the pipeline to finish the drawImage before
+           it -- then separating the two phases should recover it. Compositing
+           into N canvases and reading them afterwards does exactly that, and
+           needs no worker at all. Measured because a cheap fix for the same
+           block would be a better answer than either building or closing. */
+        const phased = median(() => {
+          const cs = [];
+          const t = performance.now();
+          for (let i = 0; i < N; i++){ const R = fresh(); R.at(plan.times[i] + 1); cs.push(R); }
+          const keep = cs.map(R => R.cx.getImageData(0, 0, W, H).data);
+          const el = performance.now() - t;
+          return keep.length === N ? el : el;
+        });
+
+        /* The loop grows with output size but the export's longest block does
+           not, so the block may not be the loop at all. This runs exactly what
+           exportGIF runs -- the same breathe() every eight frames -- and watches
+           the frame clock, so the two are directly comparable. */
+        const blockInLoop = await (async () => {
+          let worst = 0, last = performance.now(), on = true;
+          (function sample(){ if (!on) return;
+            const now = performance.now();
+            worst = Math.max(worst, now - last); last = now;
+            requestAnimationFrame(sample); })();
+          const R = fresh(), keep = [];
+          for (let i = 0; i < N; i++){
+            R.at(plan.times[i] + 1);
+            keep.push(R.cx.getImageData(0, 0, W, H).data);
+            if (i % 8 === 0) await breathe();
+          }
+          on = false;
+          return keep.length === N ? worst : worst;
+        })();
+
+        attrib.push({ px, W, H, N, both, compositeOnly, readbackOnly, readbackKept,
+                      phased, forced, forcedEmpty, blockInLoop,
+                      megabytes: Math.round(W * H * 4 * N / 1e6) });
+      }
+
+      return { out, attrib };
     }, SIZES);
 
     console.log(`\n${"output".padEnd(12)}${"palette".padEnd(13)}${"frames".padEnd(8)}${"total ms".padEnd(10)}${"longest block".padEnd(15)}bytes`);
-    for (const r of rows)
+    for (const r of rows.out)
       console.log(`${(r.W + "x" + r.H).padEnd(12)}${r.path.padEnd(13)}${String(r.frames).padEnd(8)}${String(r.totalMs).padEnd(10)}${(r.maxBlockMs + " ms").padEnd(15)}${r.bytes}`);
+
+    const ms = (n) => (Math.round(n * 10) / 10).toFixed(1);
+    const pc = (n, d) => Math.round(100 * n / d) + "%";
+
+    console.log(`\nWhat the compositing loop is made of  (${rows.attrib[0].N} frames, median of 3)`);
+    console.log(`${"output".padEnd(12)}${"loop".padEnd(10)}${"composite".padEnd(12)}` +
+                `${"readback".padEnd(11)}${"held".padEnd(9)}composite share`);
+    for (const a of rows.attrib) {
+      const comp = a.forced - a.forcedEmpty;
+      console.log(`${(a.W + "x" + a.H).padEnd(12)}${ms(a.both).padEnd(10)}${ms(comp).padEnd(12)}` +
+                  `${ms(a.readbackOnly).padEnd(11)}${(a.megabytes + " MB").padEnd(9)}${pc(comp, a.both)} of the loop`);
+    }
+    console.log("  Times are ms for the whole loop. composite + readback should be close to loop;");
+    console.log("  they are, which is what makes the split trustworthy.");
+
+    console.log(`\nWhy the obvious measurement is wrong`);
+    console.log(`${"output".padEnd(12)}${"36 draws, one canvas".padEnd(23)}${"36 draws, forced".padEnd(19)}understated by`);
+    for (const a of rows.attrib) {
+      const comp = a.forced - a.forcedEmpty;
+      console.log(`${(a.W + "x" + a.H).padEnd(12)}${(ms(a.compositeOnly) + " ms").padEnd(23)}` +
+                  `${(ms(comp) + " ms").padEnd(19)}${(comp / Math.max(a.compositeOnly, .01)).toFixed(0)}x`);
+    }
+    console.log("  Drawing 36 times into one canvas lets a driver skip every draw but the last,");
+    console.log("  so timing that reports compositing as nearly free. One canvas each, with a");
+    console.log("  1x1 read to force it, is what the middle column measures.");
+
+    console.log(`\nIs the export's longest block the compositing loop?`);
+    console.log(`${"output".padEnd(12)}${"block in loop".padEnd(16)}${"block in export".padEnd(18)}share`);
+    for (let i = 0; i < rows.attrib.length; i++) {
+      const a = rows.attrib[i], e = rows.out[i];
+      console.log(`${(a.W + "x" + a.H).padEnd(12)}${(ms(a.blockInLoop) + " ms").padEnd(16)}` +
+                  `${(e.maxBlockMs + " ms").padEnd(18)}${pc(a.blockInLoop, e.maxBlockMs)}`);
+    }
+
+    console.log(`\nWould separating draw and read -- no worker needed -- help instead?`);
+    console.log(`${"output".padEnd(12)}${"interleaved".padEnd(14)}${"phased".padEnd(11)}change`);
+    for (const a of rows.attrib) {
+      const d = Math.round(100 * (a.phased - a.both) / a.both);
+      console.log(`${(a.W + "x" + a.H).padEnd(12)}${(ms(a.both) + " ms").padEnd(14)}` +
+                  `${(ms(a.phased) + " ms").padEnd(11)}${d > 0 ? "+" : ""}${d}%`);
+    }
+    console.log("  Worse at every size, so there is no cheap fix to prefer over the worker.");
   } finally { await b.close(); srv.kill(); }
 })();
