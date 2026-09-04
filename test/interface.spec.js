@@ -344,6 +344,8 @@ test("pink used as text clears AA on every ground it sits on", async ({ page }) 
 
   // --a was 4.48:1 on --panel and 3.98:1 on --panel-2, so short pink labels and
   // warnings were under AA wherever they appeared.
+  // An empty collection here would assert nothing at all.
+  expect(r.grounds.length).toBeGreaterThan(0);
   for (const c of r.grounds) expect(c).toBeGreaterThanOrEqual(4.5);
   expect(r.slotLabel).toMatch(/255,\s*90,\s*130/);
 });

@@ -93,6 +93,8 @@ const TABLE = [
   { base: [0, 1], over: [0, 1], mode: "lcm", outDur: 1000, why: "both static, duration invented" },
 ];
 
+// An empty collection here would assert nothing at all.
+expect(TABLE.length).toBeGreaterThan(0);
 for (const row of TABLE) {
   const label = `${row.base[1] === 1 ? "still" : row.base[0] + "ms"} over ` +
                 `${row.over[1] === 1 ? "still" : row.over[0] + "ms"}`;
@@ -302,6 +304,8 @@ test("sampling at times[i] + 1 agrees with the middle of the interval",
     // of the interval does. That is what "inside the interval rather than on a
     // boundary" means, and it is checkable without depending on whether the
     // exact boundary happens to be ambiguous for a given fixture.
+    // An empty collection here would assert nothing at all.
+    expect(r.rows.length).toBeGreaterThan(0);
     for (const row of r.rows) {
       expect(row.plusOne).toEqual(row.middle);
       for (const idx of row.plusOne) expect(idx).toBeGreaterThanOrEqual(0);

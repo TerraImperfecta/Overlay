@@ -65,6 +65,8 @@ test.beforeEach(async ({ page }) => {
   await page.waitForFunction(() => typeof parseGIF === "function");
 });
 
+// An empty collection here would assert nothing at all.
+expect(MUST_REFUSE.length).toBeGreaterThan(0);
 for (const which of MUST_REFUSE) {
   test(`refuses "${which}" without hanging`, async ({ page }) => {
     test.setTimeout(15000);
@@ -122,14 +124,27 @@ test("a frame declared outside the canvas is clipped, not fatal", async ({ page 
     try {
       const gif = parseGIF(b.buffer.slice(b.byteOffset, b.byteOffset + b.length));
       const flat = flattenGIF(gif);
-      return { ok: true, frames: flat.length };
+      return { ok: true, frames: flat.length, w: gif.width, h: gif.height };
     } catch (e) { return { error: e.message }; }
   });
 
-  // flattenGIF already clips per-pixel, so this decodes to something rather
-  // than throwing. Either outcome is acceptable; hanging or corrupting is not.
-  expect(r.error || r.ok).toBeTruthy();
-  if (r.ok) expect(r.frames).toBeGreaterThan(0);
+  // flattenGIF clips per-pixel, so this decodes to something rather than
+  // throwing -- but either outcome is legitimate and the decoder is free to
+  // change its mind. What is not legitimate is hanging, or returning something
+  // that is neither.
+  //
+  // `expect(r.error || r.ok).toBeTruthy()` used to stand here, which was no
+  // assertion at all: r is one shape or the other, so it was always truthy.
+  // Both branches assert now, so whichever the decoder takes is checked.
+  if (r.ok) {
+    expect(r.frames).toBeGreaterThan(0);
+    // Clipped, not resized: the canvas is still the one the header declared.
+    expect(r.w).toBe(32);
+    expect(r.h).toBe(32);
+  } else {
+    expect(r.error).toMatch(/GIF/i);
+    expect(r.error.length).toBeLessThan(120);
+  }
 });
 
 test("a bad file dropped on a loaded slot leaves the good source alone",

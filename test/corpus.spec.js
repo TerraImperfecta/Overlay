@@ -27,6 +27,8 @@ test.beforeEach(async ({ page }) => {
   await page.waitForFunction(() => typeof parseGIF === "function");
 });
 
+// An empty collection here would assert nothing at all.
+expect(EXPECTED.files.length).toBeGreaterThan(0);
 for (const f of EXPECTED.files) {
   test(`${f.file}: this decoder matches intent`, async ({ page }) => {
     const got = await page.evaluate(async ({ name, probes }) => {

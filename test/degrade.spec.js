@@ -175,6 +175,8 @@ test("every format the browser offers actually works", async ({ page }, testInfo
 
   // Named individually, so a slow or stuck format says which one it was rather
   // than taking the whole test down with an anonymous timeout.
+  // An empty collection here would assert nothing at all.
+  expect(results.length).toBeGreaterThan(0);
   for (const r of results) {
     expect(r.settled, `${r.id} did not finish within ${PER_FORMAT_MS}ms`).toBe(true);
     expect(r.download, `${r.id} was offered but produced no download: ${r.message}`).toBe(true);
@@ -229,9 +231,19 @@ test("record whether this browser supplies an AV1 decoderConfig.description",
     await testInfo.attach("av1-description.json", {
       body: JSON.stringify(result, null, 1), contentType: "application/json" });
 
-    // Deliberately not asserted either way. Both answers are legitimate; the
-    // point is to find out which branch each engine takes.
-    expect(result).toBeTruthy();
+    // Both answers are legitimate -- the point is to find out which branch each
+    // engine takes -- so neither is asserted. What is asserted is that the probe
+    // itself still works: `expect(result).toBeTruthy()` stood here, and an
+    // object is always truthy, so a probe that started returning nothing useful
+    // would have gone on passing.
+    expect(typeof result.supported).toBe("boolean");
+    if (result.supported) {
+      expect(result.codec).toMatch(/^av01\./);
+      expect(result.descriptionBytes === null ||
+             typeof result.descriptionBytes === "number").toBe(true);
+    } else {
+      expect(result.reason).toBeTruthy();
+    }
   });
 
 // Input decoding degrades too, and less visibly than the format list does.
