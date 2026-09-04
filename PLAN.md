@@ -172,6 +172,25 @@ frames must be full-frame with disposal 2.
 **`MediaRecorder` is a fallback, not a path.** It only appears in the format list when no
 `VideoEncoder` codec is available at all, and is labelled "(real time)". Do not promote it.
 
+**Exercised at last in #59**, by deleting `window.VideoEncoder` in an `addInitScript` rather
+than waiting for a browser that lacks it — #19 established that all three engines have a full
+codec set, so the branch was unreachable from the suite and four claims about it had never run:
+the labelling, that the output passes `verifyBlob` (#41), that cancelling tears down the capture
+stream (#45), and that the substitute offered after a failed mux is itself verified (#41). All
+four hold.
+
+**What that measurement showed is worse than "slow".** Against a plan with boundaries of
+100/48/52/96/30 ms, the recording came back flat at ~67 ms — a uniform resample at the capture
+rate, drifting up to 30 ms, and 336 ms of a 400 ms clip. Not preserving those boundaries is the
+one thing this tool exists to do. The note said only that it takes as long as it runs, which is
+the lesser problem and the misleading half of the truth; it now names the timing too, and a test
+holds it to that.
+
+Worth knowing for any future decision to drop it: on every engine, with no `VideoEncoder`, GIF
+and APNG both remain (they need no browser codec — WebP does, and WebKit has none). So the
+recorder is a convenience for getting *video* out, never the difference between an export and
+nothing.
+
 **Output is verified before it is offered.** `verifyBlob()` feeds AVIF back through
 `ImageDecoder` and video through a `<video>` element. This exists because the muxers were
 written without access to a real decoder. Do not remove it as "unnecessary overhead".
