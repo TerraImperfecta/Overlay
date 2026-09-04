@@ -297,9 +297,18 @@ the colours cluster into few bins. That is correct, not truncation.
 The readout the original entry assumed exists now does: a GIF export reports either
 `Exact palette · N colours, none lost` or `Palette reduced to N colours`.
 
-**Reload behaviour.** Drop three different files into the same slot in succession. The slot
-must show exactly one thumbnail each time, the readout must update, and memory must not grow.
-Then drop a non-image file and confirm the previous source survives.
+**Reload behaviour.** ~~Drop three different files into the same slot in succession.~~
+**Confirmed in #26**, and automated through the drop handler rather than by calling `accept()`,
+so the assertions run over what the user actually gets.
+
+"Memory must not grow" is checked as a property rather than a measurement: after eight reloads,
+the only `ImageBitmap`s still open are the ones belonging to the source on screen. A closed
+bitmap reports width 0, which makes that exact. Heap size is too noisy to assert on and is only
+reported.
+
+The related invariant — `input.value = ""` before `input.click()` — cannot be reached through
+the picker, which is not scriptable. The test watches for the assignment itself instead, since
+reading `input.value` proves nothing: it is `""` either way until a file has been chosen.
 
 ---
 
