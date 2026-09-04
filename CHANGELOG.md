@@ -71,6 +71,10 @@ Notable changes to Overlay. Format follows [Keep a Changelog](https://keepachang
   chooses which one the size slider and preview dragging act on. "Base size" follows the base's
   placed rectangle; "Fit both" is the union of the two.
 
+- Output settings persist between visits: format, quality, output scale, opacity, sync mode and
+  background. Nothing derived from a loaded file is stored, stored values are validated field by
+  field, and a browser that throws on `localStorage` simply gets no persistence.
+
 ### Changed
 
 - `PLAN.md` section 4 records that all four of its suspects were put in front of third-party

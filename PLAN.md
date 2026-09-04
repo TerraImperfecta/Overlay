@@ -248,8 +248,17 @@ will point at the box far faster than reading the spec again.
 10. ~~Optional Floyd–Steinberg dithering for the GIF path.~~ **Measured and ruled out in #31 —
     see section 7.** It was implemented, measured, and the implementation reverted; the numbers
     are in section 7 so nobody has to build it again to find out.
-11. Persist settings to `localStorage`. Reads and writes still need `try`/`catch` — private
-    browsing and blocked site data can throw — but the `file://` hazard is gone.
+11. ~~Persist settings to `localStorage`.~~ **Done in #32.** Output format, quality, output
+    scale, opacity, sync mode, background and background colour, and nothing derived from a
+    loaded file — not the sources, and not layer placement, whose coordinates are fractions of
+    a base that will not be there next time.
+
+    Everything read back is treated as hostile and validated field by field, so one bad value
+    costs that setting rather than all of them, and a stored format the current browser cannot
+    produce falls back to whatever `buildFormats()` chose. Reads and writes are wrapped because
+    some browsers *throw* on touching `localStorage` rather than returning null; there is a test
+    that makes the accessor throw and confirms the app still starts and its controls still work.
+    Reading settings never writes them, so an untouched visit leaves no trace.
 
 ---
 

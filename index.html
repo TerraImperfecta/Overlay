@@ -1748,20 +1748,99 @@ document.querySelectorAll(".slot").forEach(slot => {
   renderSlot(i);
 });
 
+/* =====================================================================
+   Persisted settings
+   =====================================================================
+   Output settings only. Nothing derived from a loaded file is stored --
+   not the sources, and not layer placement, whose coordinates are
+   fractions of a base that will not be there next time.
+
+   Every read and write is wrapped: a private window or a browser set to
+   block site data can *throw* on access rather than returning null, and a
+   stored preference must never be able to stop the app starting. */
+const SETTINGS_KEY = "overlay.settings.v1";
+
+function writeSettings(){
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+      format: $("#fmt").value, quality: S.quality, outScale: S.outScale,
+      opacity: S.opacity, sync: S.sync, bg: S.bg, bgColor: S.bgColor,
+    }));
+  } catch {}
+}
+
+/* Anything read back is treated as hostile: it may be from an older version,
+   hand-edited, or corrupt. Each field is validated on its own, so one bad
+   value costs that setting rather than all of them. */
+function readSettings(){
+  let raw = null;
+  try { raw = localStorage.getItem(SETTINGS_KEY); } catch { return {}; }
+  let stored;
+  try { stored = JSON.parse(raw); } catch { return {}; }
+  if (!stored || typeof stored !== "object") return {};
+
+  const out = {};
+  const num = (v, lo, hi) => (typeof v === "number" && isFinite(v) && v >= lo && v <= hi) ? v : undefined;
+  const oneOf = (v, list) => list.includes(v) ? v : undefined;
+
+  const q  = num(stored.quality, 0, 1);           if (q  !== undefined) out.quality  = q;
+  const os = num(stored.outScale, .05, 4);        if (os !== undefined) out.outScale = os;
+  const op = num(stored.opacity, 0, 1);           if (op !== undefined) out.opacity  = op;
+  const sy = oneOf(stored.sync, [...$("#sync").options].map(o => o.value));
+                                                  if (sy !== undefined) out.sync     = sy;
+  const bg = oneOf(stored.bg, ["transparent","solid"]);
+                                                  if (bg !== undefined) out.bg       = bg;
+  if (typeof stored.bgColor === "string" && /^#[0-9a-f]{6}$/i.test(stored.bgColor))
+    out.bgColor = stored.bgColor;
+  if (typeof stored.format === "string") out.format = stored.format;
+  return out;
+}
+
+/* Both halves of a segmented control, so a restored value looks selected
+   rather than merely being selected. */
+function setSeg(aId, bId, useA){
+  $(aId).setAttribute("aria-pressed", useA ? "true" : "false");
+  $(bId).setAttribute("aria-pressed", useA ? "false" : "true");
+}
+
+function applySettings(st){
+  if (st.quality  !== undefined){ S.quality  = st.quality;
+    $("#q").value = Math.round(st.quality*100); $("#qv").textContent = $("#q").value; }
+  if (st.outScale !== undefined){ S.outScale = st.outScale;
+    $("#osc").value = Math.round(st.outScale*100); $("#oscv").textContent = $("#osc").value+"%"; }
+  if (st.opacity  !== undefined){ S.opacity  = st.opacity;
+    $("#op").value = Math.round(st.opacity*100);  $("#opv").textContent = $("#op").value+"%"; }
+  if (st.sync     !== undefined){ S.sync = st.sync; $("#sync").value = st.sync; }
+  if (st.bg       !== undefined){ S.bg = st.bg; setSeg("#bgT", "#bgC", st.bg === "transparent"); }
+  if (st.bgColor  !== undefined){ S.bgColor = st.bgColor; $("#bgColor").value = st.bgColor; }
+}
+
+/* Only after buildFormats(), and only if this browser can actually produce it.
+   A format that is no longer on offer falls back to whatever buildFormats
+   chose, rather than selecting an option that is not there. */
+function applyStoredFormat(id){
+  if (!id || !FORMATS.some(f => f.id === id)) return false;
+  $("#fmt").value = id;
+  onFormat();
+  return true;
+}
+
 const bind = (id,ev,fn) => $(id).addEventListener(ev,fn);
-bind("#sync","change", e => { S.sync = e.target.value; replan(); });
+bind("#sync","change", e => { S.sync = e.target.value; replan(); writeSettings(); });
 bind("#maxf","input", e => { S.maxFrames = +e.target.value;
   $("#maxfv").textContent = S.maxFrames+" max"; replan(); });
 bind("#blend","change", e => S.blend = e.target.value);
-bind("#op","input", e => { S.opacity = e.target.value/100; $("#opv").textContent = e.target.value+"%"; });
+bind("#op","input", e => { S.opacity = e.target.value/100; $("#opv").textContent = e.target.value+"%";
+  writeSettings(); });
 bind("#sc","input", e => { S.place[S.sel].scale = e.target.value/100;
   $("#scv").textContent = e.target.value+"%"; replan(); });
 bind("#osc","input", e => { S.outScale = e.target.value/100;
-  $("#oscv").textContent = e.target.value+"%"; replan(); });
-bind("#q","input", e => { S.quality = e.target.value/100; $("#qv").textContent = e.target.value; });
+  $("#oscv").textContent = e.target.value+"%"; replan(); writeSettings(); });
+bind("#q","input", e => { S.quality = e.target.value/100; $("#qv").textContent = e.target.value;
+  writeSettings(); });
 bind("#loops","input", e => S.loops = Math.max(1, Math.min(20, +e.target.value || 1)));
-bind("#bgColor","input", e => S.bgColor = e.target.value);
-bind("#fmt","change", onFormat);
+bind("#bgColor","input", e => { S.bgColor = e.target.value; writeSettings(); });
+bind("#fmt","change", () => { onFormat(); writeSettings(); });
 
 function onFormat(){
   const f = currentFormat(); if (!f) return;
@@ -1784,7 +1863,7 @@ seg("#lyBase","#lyOver", 0, 1, i => {
   const pct = Math.round(S.place[i].scale*100);
   $("#sc").value = pct; $("#scv").textContent = pct + "%";
 });
-seg("#bgT","#bgC","transparent","solid", v => S.bg = v);
+seg("#bgT","#bgC","transparent","solid", v => { S.bg = v; writeSettings(); });
 
 bind("#swap","click", () => { S.src.reverse(); renderSlot(0); renderSlot(1); replan(); });
 bind("#center","click", () => {
@@ -1826,7 +1905,13 @@ stage.addEventListener("pointerup", () => { dragging = false; stage.classList.re
 $("#maxfv").textContent = S.maxFrames+" max";
 $("#opv").textContent = "100%"; $("#scv").textContent = "100%";
 $("#oscv").textContent = "100%"; $("#qv").textContent = "82";
-replan(); buildFormats(); loop();
+/* Restore before the first plan so the readout is right immediately; the
+   format waits for buildFormats() to say what this browser can offer. */
+const stored = readSettings();
+applySettings(stored);
+replan();
+buildFormats().then(() => { applyStoredFormat(stored.format); });
+loop();
 </script>
 </body>
 </html>
