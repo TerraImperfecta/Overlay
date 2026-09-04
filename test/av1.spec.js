@@ -303,6 +303,8 @@ test("uvlc round-trips every leading-zero length it permits", async ({ page }) =
       for (let z = 0; z <= 31; z++) out.push({ z, ...readUvlc(Math.pow(2, z) - 1) });
       return out; })()`);
 
+  // An empty collection here would assert nothing at all.
+  expect(rows.length).toBeGreaterThan(0);
   for (const r of rows) {
     // 2^z - 1 is the smallest value with z leading zeros, so the offset is the
     // whole of it and the value bits are all zero.

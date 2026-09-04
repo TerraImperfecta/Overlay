@@ -23,6 +23,7 @@ async function readState(page) {
     quality: S.quality, outScale: S.outScale, opacity: S.opacity,
     sync: S.sync, bg: S.bg, bgColor: S.bgColor,
     format: document.querySelector("#fmt").value,
+    options: [...document.querySelector("#fmt").options].map((o) => o.value),
     q: document.querySelector("#q").value,
     osc: document.querySelector("#osc").value,
     op: document.querySelector("#op").value,
@@ -91,7 +92,9 @@ test("corrupt stored data is ignored, not fatal", async ({ page }) => {
     const s = await readState(page);
     expect(errors, `${junk} threw: ${errors.join()}`).toEqual([]);
     expect(s.quality, `${junk} changed quality`).toBeCloseTo(0.82, 6);
-    expect(s.format).toBeTruthy();
+    // Not merely non-empty: a stale or invented id would leave the control
+    // showing a value the browser cannot produce.
+    expect(s.options).toContain(s.format);
   }
 });
 
@@ -152,12 +155,13 @@ test("the app starts even when touching localStorage throws", async ({ page }) =
     el.value = "45";
     el.dispatchEvent(new Event("input", { bubbles: true }));   // must not throw
     return { opacity: S.opacity, formats: FORMATS.length,
-             fmt: document.querySelector("#fmt").value };
+             fmt: document.querySelector("#fmt").value,
+             options: [...document.querySelector("#fmt").options].map((o) => o.value) };
   });
 
   expect(errors, `startup threw: ${errors.join(" | ")}`).toEqual([]);
   expect(r.formats).toBeGreaterThan(0);
-  expect(r.fmt).toBeTruthy();
+  expect(r.options).toContain(r.fmt);
   // And the controls still work; they simply do not persist.
   expect(r.opacity).toBeCloseTo(0.45, 6);
 });

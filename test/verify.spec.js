@@ -50,6 +50,8 @@ async function exportOne(page, id) {
 }
 
 test.describe("verifyBlob covers the still formats", () => {
+  // An empty collection here would assert nothing at all.
+  expect(STILL_FORMATS.length).toBeGreaterThan(0);
   for (const id of STILL_FORMATS) {
     test(`${id}: good output passes, with the right frame count`, async ({ page }) => {
       const plan = await loadSources(page);
