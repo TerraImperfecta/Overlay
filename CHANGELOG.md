@@ -61,6 +61,9 @@ Notable changes to Overlay. Format follows [Keep a Changelog](https://keepachang
   output format: GIF's 1-bit thresholding, WebP and APNG preserving partial alpha, the opaque
   formats honouring the background colour, and GIF's disposal mode switching with it.
 
+- Tests for slot reloading: one thumbnail per load, bitmaps closed and thumbnail URLs revoked
+  on replacement, and a file that cannot be decoded leaving the previous source untouched.
+
 ### Changed
 
 - `PLAN.md` section 4 records that all four of its suspects were put in front of third-party
