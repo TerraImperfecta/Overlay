@@ -1,6 +1,6 @@
 # Overlay
 
-A single-file browser tool that merges two animations into one file on a shared timeline.
+A browser tool that merges two animations into one file on a shared timeline.
 
 Two animations stacked in a page drift apart, because each keeps its own clock and browsers
 round frame delays differently. Overlay fixes that structurally rather than approximately:
@@ -29,7 +29,9 @@ shrinks rather than throws on browsers with narrower support.
 ## Layout
 
 ```
-index.html    the entire tool — markup, styles and script in one file
+index.html    the markup, and the script tags that load the rest
+styles.css    every style in the tool
+js/           the script, one file per numbered section
 PLAN.md       outstanding work, and the decisions behind the code
 corpus/       generated GIFs that exercise the decoder's awkward cases
 test/         Playwright suite, a static server, and the validation tools
@@ -41,10 +43,16 @@ output format to `out/`, alongside the plan they were meant to encode. Add
 and `stts` run-length compression. `test/inspect_container.py` then reads per-frame
 timing straight out of an MP4 or WebM.
 
-The script is divided by numbered banner comments, 0–13: icon, GIF decoder, source loader,
-timeline merge, GIF quantizer/encoder, WebP muxer, APNG muxer, ISOBMFF muxer (MP4 + AVIF),
-EBML muxer (WebM), WebCodecs driver, format registry, app state and compositing, export,
-UI wiring. Keep the banners; they are the map.
+`js/` is one file per numbered section, 0–13, named for what it holds: icon, GIF decoder,
+source loader, timeline merge, GIF quantizer/encoder, WebP muxer, APNG muxer, ISOBMFF muxer
+(MP4 + AVIF), EBML muxer (WebM), WebCodecs driver, format registry, app state and compositing,
+export, UI wiring — plus `util.js`, which holds the three helpers everything uses. Each file
+keeps its banner comment; the numbers are the map, and PLAN.md refers to them.
+
+**They are ordinary scripts, not modules, and the order in `index.html` is the order they must
+load in.** One shared global scope is what lets the GIF worker be assembled by stringifying
+functions that find each other, and what lets the tests reach the code at all. A module would
+buy encapsulation and cost both.
 
 ## Run it
 
