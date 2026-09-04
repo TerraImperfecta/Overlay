@@ -65,7 +65,13 @@ export async function buildFormats(){
       let ok = false; try { ok = MediaRecorder.isTypeSupported(mime); } catch {}
       if (ok) FORMATS.push({id:"rec:"+mime, label:label+" (real time)", ext, kind:"recorder",
         mime, quality:true, recorder:true,
-        note:"This browser has no VideoEncoder, so the clip is captured in real time and takes as long as it runs."});
+        /* The note used to warn only that this is slow, which is the lesser
+           problem. Measured in #59 against a 6-frame plan: boundaries of
+           100/48/52/96/30 ms came back as a flat 67 ms, drifting up to 30 ms,
+           because the frames land on the capture clock rather than the merged
+           timeline. Not preserving those boundaries is the one thing this tool
+           exists to do, so whoever picks this has to be told. */
+        note:"This browser has no VideoEncoder. The clip is captured in real time: it takes as long as it runs, and frame times follow the capture clock rather than the merged timeline. GIF, WebP and APNG keep exact timing here."});
     }
   }
 
