@@ -64,6 +64,9 @@ npm run fixtures && npm run fixtures -- --stress
 .venv/bin/python test/validate_containers.py
 ```
 
+CI runs that automatically whenever a muxer changes — `.github/workflows/containers.yml` —
+so the muxers are never merged on the strength of our own parser alone.
+
 `js/` is one file per concern, named for what it holds: `icon`, `gif-decoder`, `source-loader`,
 `timeline`, `gif-encoder`, `webp`, `apng`, `isobmff` (MP4 + AVIF), `webm`, `webcodecs`, `formats`,
 then the app layer as `state`, `geometry`, `compositing`, `history`, `controls`, `preview` and

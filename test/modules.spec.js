@@ -121,3 +121,35 @@ test("every module the docs name actually exists", () => {
   }
   expect(broken).toEqual([]);
 });
+
+test("the container workflow watches files that exist, in both triggers", () => {
+  // .github/workflows/containers.yml runs the libavformat validation only when
+  // a muxer changes. Two ways that goes quietly wrong, and #86 made the first
+  // one real by renaming every module:
+  //
+  //   * a path names a file that no longer exists, so the muxer it was meant to
+  //     watch is no longer watched and nothing says so;
+  //   * the pull_request and push lists drift apart, so a change is validated
+  //     on the branch and not on main, or the reverse.
+  //
+  // The lists are spelled out twice on purpose -- GitHub does not resolve YAML
+  // anchors in workflow files -- which is exactly what makes drift possible.
+  const wf = fs.readFileSync(
+    path.join(__dirname, "..", ".github", "workflows", "containers.yml"), "utf8");
+
+  const lists = [...wf.matchAll(/paths:\n((?:\s*(?:#[^\n]*|- '[^']+')\n)+)/g)]
+    .map((m) => [...m[1].matchAll(/- '([^']+)'/g)].map((x) => x[1]));
+
+  expect(lists, "expected a paths list under each of pull_request and push")
+    .toHaveLength(2);
+  expect(lists[0]).toEqual(lists[1]);
+  expect(lists[0].length).toBeGreaterThan(0);
+
+  const missing = lists[0].filter(
+    (rel) => !fs.existsSync(path.join(__dirname, "..", rel)));
+  expect(missing, "the workflow watches files that are not there").toEqual([]);
+
+  // And the muxers themselves must be among them, or the gate is decorative.
+  for (const must of ["js/isobmff.js", "js/webm.js"])
+    expect(lists[0]).toContain(must);
+});
